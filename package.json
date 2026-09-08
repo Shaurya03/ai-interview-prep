@@ -21,6 +21,7 @@
   "homepage": "https://github.com/Shaurya03/ai-interview-prep#readme",
   "private": true,
   "workspaces": [
-    "apps/*"
+    "apps/*",
+    "packages/*"
   ]
 }

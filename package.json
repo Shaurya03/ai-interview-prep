@@ -1,0 +1,26 @@
+{
+  "name": "ai-interview-prep",
+  "version": "1.0.0",
+  "description": "An assessment project for creating personalized interview-preparation kits from a candidate's resume and a target company or role.",
+  "scripts": {
+    "dev": "npm run dev --workspace=web",
+    "dev:api": "npm run dev --workspace=api",
+    "build": "npm run build --workspace=web",
+    "lint": "npm run lint --workspace=web"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Shaurya03/ai-interview-prep.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Shaurya03/ai-interview-prep/issues"
+  },
+  "homepage": "https://github.com/Shaurya03/ai-interview-prep#readme",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ]
+}

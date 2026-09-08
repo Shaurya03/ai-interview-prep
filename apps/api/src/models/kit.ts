@@ -1,4 +1,4 @@
-import { InferSchemaType, model, models, Schema, Types } from "mongoose";
+import mongoose, { type InferSchemaType, Schema, type Types } from "mongoose";
 
 const kitSchema = new Schema(
   {
@@ -11,4 +11,4 @@ const kitSchema = new Schema(
 );
 
 export type KitDocument = InferSchemaType<typeof kitSchema> & { ownerId: Types.ObjectId };
-export const Kit = models.Kit ?? model("Kit", kitSchema);
+export const Kit = mongoose.models.Kit ?? mongoose.model("Kit", kitSchema);

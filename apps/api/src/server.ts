@@ -1,6 +1,9 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+import { resolve } from "node:path";
 import { createApp } from "./app.js";
 import { connectToDatabase } from "./db.js";
+
+dotenv.config({ path: resolve(process.cwd(), "../../.env") });
 
 const port = Number(process.env.PORT ?? 4000);
 async function start() {

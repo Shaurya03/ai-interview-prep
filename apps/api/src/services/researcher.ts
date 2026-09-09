@@ -6,17 +6,17 @@ const MAX_PAGE_BYTES = 1_000_000;
 const MAX_PAGES = 6;
 const REQUEST_TIMEOUT_MS = 10_000;
 
-type ResearchPage = {
+export interface ResearchPage {
   url: string;
   title: string;
   text: string;
 };
 
-export type CompanyResearch = {
+export interface ResearchResult {
   pages: ResearchPage[];
   pagesUsed: string[];
   gaps: string[];
-};
+}
 
 function isPrivateIp(address: string): boolean {
   if (net.isIPv4(address)) {
@@ -295,7 +295,7 @@ function getSameOriginLinks(
 
 export async function researchCompany(
   companyUrl: string
-): Promise<CompanyResearch> {
+): Promise<ResearchResult> {
   const validatedUrl = await validateUrl(companyUrl);
 
   const pages: ResearchPage[] = [];

@@ -4,6 +4,7 @@ import { requireAuth, type AuthenticatedRequest } from "../middleware/require-au
 import { Kit } from "../models/kit.js";
 import { extractRequirements } from "../services/requirement-extractor.js";
 import { researchCompany } from "../services/researcher.js";
+import { generateCompanyBrief } from "../services/company-brief-generator.js";
 
 const createKitSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -72,6 +73,41 @@ kitsRouter.post(
       const research = await researchCompany(kit.companyUrl);
 
       return response.json({
+        research,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+kitsRouter.post(
+  "/:id/company-brief",
+  async (request: AuthenticatedRequest, response, next) => {
+    try {
+      const kit = await Kit.findOne({
+        _id: request.params.id,
+        ownerId: request.userId,
+      });
+
+      if (!kit) {
+        return response.status(404).json({
+          error: {
+            code: "KIT_NOT_FOUND",
+            message: "Interview kit not found.",
+          },
+        });
+      }
+
+      const research = await researchCompany(kit.companyUrl);
+
+      const companyBrief = await generateCompanyBrief(
+        kit.companyUrl,
+        research
+      );
+
+      return response.json({
+        companyBrief,
         research,
       });
     } catch (error) {

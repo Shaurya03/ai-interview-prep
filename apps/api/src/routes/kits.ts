@@ -5,6 +5,7 @@ import { Kit } from "../models/kit.js";
 import { extractRequirements } from "../services/requirement-extractor.js";
 import { researchCompany } from "../services/researcher.js";
 import { generateCompanyBrief } from "../services/company-brief-generator.js";
+import { generateQuestions } from "../services/question-generator.js";
 
 const createKitSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -109,6 +110,38 @@ kitsRouter.post(
       return response.json({
         companyBrief,
         research,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+kitsRouter.post(
+  "/:id/questions",
+  async (request: AuthenticatedRequest, response, next) => {
+    try {
+      const kit = await Kit.findOne({
+        _id: request.params.id,
+        ownerId: request.userId,
+      });
+
+      if (!kit) {
+        return response.status(404).json({
+          error: {
+            code: "KIT_NOT_FOUND",
+            message: "Interview kit not found.",
+          },
+        });
+      }
+
+      const requirements = await extractRequirements(kit.jobDescription);
+
+      const questions = await generateQuestions(requirements);
+
+      return response.json({
+        requirements,
+        questions,
       });
     } catch (error) {
       return next(error);

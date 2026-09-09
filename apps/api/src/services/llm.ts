@@ -1,9 +1,50 @@
 import { GoogleGenAI } from "@google/genai";
 
-const MAX_ATTEMPTS = 3;
+const MAX_ATTEMPTS_PER_MODEL = 3;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getModels(): string[] {
+  const primaryModel = process.env.GEMINI_MODEL ?? "gemini-3.7-flash";
+
+  const fallbackModels = (process.env.GEMINI_FALLBACK_MODELS ?? "")
+    .split(",")
+    .map((model) => model.trim())
+    .filter(Boolean);
+
+  return [...new Set([primaryModel, ...fallbackModels])];
+}
+
+function isRetryableError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const possibleError = error as {
+    status?: number;
+    message?: string;
+  };
+
+  if (
+    possibleError.status === 429 ||
+    possibleError.status === 500 ||
+    possibleError.status === 502 ||
+    possibleError.status === 503 ||
+    possibleError.status === 504
+  ) {
+    return true;
+  }
+
+  const message = possibleError.message?.toLowerCase() ?? "";
+
+  return (
+    message.includes("rate limit") ||
+    message.includes("too many requests") ||
+    message.includes("high demand") ||
+    message.includes("temporarily unavailable")
+  );
 }
 
 export async function generateJson<T>(prompt: string): Promise<T> {
@@ -13,44 +54,67 @@ export async function generateJson<T>(prompt: string): Promise<T> {
     throw new Error("GEMINI_API_KEY is not configured.");
   }
 
-  const model = process.env.GEMINI_MODEL ?? "gemini-3.6-flash";
   const ai = new GoogleGenAI({ apiKey });
+  const models = getModels();
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    try {
-      const response = await ai.models.generateContent({
-        model,
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-        },
-      });
+  let lastError: unknown;
 
-      const text = response.text;
+  for (const model of models) {
+    console.log(`Trying LLM model: ${model}`);
 
-      if (!text) {
-        throw new Error("LLM returned an empty response.");
-      }
-
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_MODEL; attempt++) {
       try {
-        return JSON.parse(text) as T;
-      } catch {
-        throw new Error("LLM returned invalid JSON.");
+        const response = await ai.models.generateContent({
+          model,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+          },
+        });
+
+        const text = response.text;
+
+        if (!text) {
+          throw new Error("LLM returned an empty response.");
+        }
+
+        try {
+          return JSON.parse(text) as T;
+        } catch {
+          throw new Error("LLM returned invalid JSON.");
+        }
+      } catch (error) {
+        lastError = error;
+
+        if (!isRetryableError(error)) {
+          throw error;
+        }
+
+        if (attempt === MAX_ATTEMPTS_PER_MODEL) {
+          console.log(
+            `LLM model ${model} failed after ${MAX_ATTEMPTS_PER_MODEL} attempts.`
+          );
+          break;
+        }
+
+        const delayMs = 1000 * 2 ** (attempt - 1);
+
+        console.log(
+          `LLM request failed for ${model} on attempt ${attempt}. ` +
+          `Retrying in ${delayMs}ms...`
+        );
+
+        await sleep(delayMs);
       }
-    } catch (error) {
-      if (attempt === MAX_ATTEMPTS) {
-        throw error;
-      }
-
-      const delayMs = 1000 * 2 ** (attempt - 1);
-
-      console.log(
-        `LLM request failed on attempt ${attempt}. Retrying in ${delayMs}ms...`
-      );
-
-      await sleep(delayMs);
     }
+
+    console.log(`Moving to next LLM model after failure: ${model}`);
   }
 
-  throw new Error("LLM generation failed.");
+  throw new Error(
+    `All configured LLM models failed. Last error: ${lastError instanceof Error
+      ? lastError.message
+      : "Unknown LLM error."
+    }`
+  );
 }

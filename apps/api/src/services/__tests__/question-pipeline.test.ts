@@ -87,11 +87,15 @@ describe("generateQuestionPipeline", () => {
 
     expect(mockedGenerateQuestions).toHaveBeenNthCalledWith(
       2,
-      requirements,
-      {
-        focusRequirementIds: ["r2"],
-        targetQuestionCount: 2,
-      }
+      [
+        {
+          id: "r2",
+          text: "Experience with React",
+          kind: "technical",
+          priority: "must",
+        },
+      ],
+      undefined
     );
   });
 

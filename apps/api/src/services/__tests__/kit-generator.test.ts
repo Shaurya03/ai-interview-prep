@@ -140,7 +140,10 @@ describe("generateKitDraft", () => {
       1
     );
     expect(mockedGenerateQuestionPipeline).toHaveBeenCalledWith(
-      requirements
+      requirements,
+      {
+        companyBrief,
+      }
     );
   });
 

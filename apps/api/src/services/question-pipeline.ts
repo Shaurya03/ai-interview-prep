@@ -2,6 +2,7 @@ import { checkCoverage } from "./coverage-checker.js";
 import {
   generateQuestions,
   type GeneratedQuestion,
+  type QuestionGenerationContext,
 } from "./question-generator.js";
 import type { ExtractedRequirement } from "./requirement-extractor.js";
 
@@ -14,29 +15,36 @@ export interface QuestionPipelineResult {
 }
 
 export async function generateQuestionPipeline(
-  requirements: ExtractedRequirement[]
+  requirements: ExtractedRequirement[],
+  context?: QuestionGenerationContext
 ): Promise<QuestionPipelineResult> {
   if (requirements.length === 0) {
     throw new Error("Cannot generate questions without requirements.");
   }
 
-  // First pass: generate the main question bank.
-  let questions = await generateQuestions(requirements);
+  // First pass: generate the main question bank using the full
+  // requirement set and available company research context.
+  let questions = await generateQuestions(
+    requirements,
+    context
+  );
 
   let coverage = checkCoverage(requirements, questions);
   let passes = 1;
 
   // Second pass: repair any uncovered must-have requirements.
   if (coverage.uncoveredRequirementIds.length > 0) {
-    const repairQuestions = await generateQuestions(requirements, {
-      focusRequirementIds: coverage.uncoveredRequirementIds,
-      targetQuestionCount: Math.max(
-        2,
-        coverage.uncoveredRequirementIds.length * 2
-      ),
-    });
+    const uncoveredRequirements = requirements.filter(
+      (requirement) =>
+        coverage.uncoveredRequirementIds.includes(requirement.id)
+    );
 
-    // Give repair questions new IDs so they don't collide with
+    const repairQuestions = await generateQuestions(
+      uncoveredRequirements,
+      context
+    );
+
+    // Give repair questions new IDs so they do not collide with
     // questions generated during the first pass.
     const nextQuestionNumber = questions.length + 1;
 

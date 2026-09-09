@@ -46,10 +46,17 @@ export async function generateKitDraft(
     research
   );
 
-  // Step 4: Generate questions and repair uncovered must-have
-  // requirements through the question pipeline.
+  // Step 4: Generate questions using both the requirements
+  // and the company research context.
+  //
+  // This allows company-specific information to influence
+  // question generation while keeping the requirements grounded
+  // in the original job description.
   const questionResult = await generateQuestionPipeline(
-    requirements
+    requirements,
+    {
+      companyBrief,
+    }
   );
 
   return {

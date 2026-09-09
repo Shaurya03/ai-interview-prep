@@ -178,11 +178,21 @@ async function fetchPage(url: URL): Promise<{
       const html = new TextDecoder().decode(buffer);
       const $ = cheerio.load(html);
 
-      $("script, style, noscript, svg").remove();
+      $(
+        "script, style, noscript, svg, nav, footer, header, form, " +
+        "[role='navigation'], [role='dialog'], [aria-hidden='true']"
+      ).remove();
 
       const title = $("title").first().text().trim();
 
-      const text = $("body")
+      const contentRoot =
+        $("main").first().length > 0
+          ? $("main").first()
+          : $("article").first().length > 0
+            ? $("article").first()
+            : $("body");
+
+      const text = contentRoot
         .text()
         .replace(/\s+/g, " ")
         .trim();

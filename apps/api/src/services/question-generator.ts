@@ -35,12 +35,34 @@ export interface GeneratedQuestion {
   difficulty: number;
 }
 
+interface GenerateQuestionsOptions {
+  targetQuestionCount?: number;
+  focusRequirementIds?: string[];
+}
+
 export async function generateQuestions(
-  requirements: ExtractedRequirement[]
+  requirements: ExtractedRequirement[],
+  options?: GenerateQuestionsOptions
 ): Promise<GeneratedQuestion[]> {
   if (requirements.length === 0) {
     throw new Error("Cannot generate questions without requirements.");
   }
+
+  const targetQuestionCount =
+    options?.targetQuestionCount ??
+    Math.min(
+      40,
+      Math.max(
+        requirements.length,
+        Math.ceil(requirements.length * 1.5)
+      )
+    );
+
+  const focusRequirements = options?.focusRequirementIds
+    ? requirements.filter((requirement) =>
+      options.focusRequirementIds?.includes(requirement.id)
+    )
+    : [];
 
   const mustHaveCount = requirements.filter(
     (requirement) => requirement.priority === "must"
@@ -49,16 +71,6 @@ export async function generateQuestions(
   const niceToHaveCount = requirements.filter(
     (requirement) => requirement.priority === "nice"
   ).length;
-
-  // Generate roughly 1.5 questions per requirement,
-  // while keeping the question bank within a reasonable size.
-  const targetQuestionCount = Math.min(
-    40,
-    Math.max(
-      requirements.length,
-      Math.ceil(requirements.length * 1.5)
-    )
-  );
 
   const requirementText = requirements
     .map(
@@ -70,10 +82,43 @@ PRIORITY: ${requirement.priority}`
     )
     .join("\n\n");
 
-  const prompt = `
-You are generating an interview question bank for a personalized interview preparation tool.
+  const focusInstructions =
+    focusRequirements.length > 0
+      ? `
+This is a COVERAGE REPAIR PASS.
 
-Generate approximately ${targetQuestionCount} strong interview questions from the supplied requirements.
+The previous question-generation pass left these must-have requirements
+without a question:
+
+${focusRequirements
+        .map(
+          (requirement) =>
+            `ID: ${requirement.id}
+TEXT: ${requirement.text}
+PRIORITY: ${requirement.priority}`
+        )
+        .join("\n\n")}
+
+Generate questions specifically designed to cover these requirements.
+
+Every focused requirement MUST be covered by at least one generated question.
+
+Do not spend the majority of this pass generating questions for unrelated
+requirements.
+`
+      : `
+This is the INITIAL QUESTION GENERATION PASS.
+
+Generate a useful question bank from the supplied requirements.
+`;
+
+  const prompt = `
+You are generating an interview question bank for a personalized interview
+preparation tool.
+
+${focusInstructions}
+
+Generate approximately ${targetQuestionCount} strong interview questions.
 
 There are:
 - ${mustHaveCount} must-have requirements
@@ -83,21 +128,32 @@ Do NOT generate exactly one question per requirement.
 
 Instead:
 - Important must-have requirements may receive multiple questions.
-- Related requirements may be tested together when that produces a stronger question.
+- Related requirements may be tested together when that produces a stronger
+  question.
 - Use fewer questions for minor or simple requirements.
-- Avoid repetitive questions that test the same thing in slightly different words.
+- Avoid repetitive questions that test the same thing in slightly different
+  words.
 - Do not create questions solely to reach the target count.
-- For a thin job description, generate a correspondingly smaller and more focused question bank.
+- For a thin job description, generate a correspondingly smaller and more
+  focused question bank.
 
-Every question MUST reference one or more requirement IDs that it genuinely tests.
+Every question MUST reference one or more requirement IDs that it genuinely
+tests.
 
-Do not invent technologies, responsibilities, qualifications, company expectations, or interview requirements that are not represented by the supplied requirements.
+Do not invent technologies, responsibilities, qualifications, company
+expectations, or interview requirements that are not represented by the
+supplied requirements.
 
 Category rules:
-- "technical": programming languages, frameworks, databases, APIs, authentication, testing, deployment, Git, etc.
-- "behavioural": communication, collaboration, independence, problem-solving, mentoring, teamwork, etc.
-- "system-design": architecture, scalability, reliability, system decomposition, API/system architecture, or similar design topics when supported by the requirements.
-- "company-fit": motivation, company-specific fit, role expectations, or company-oriented questions when supported by the requirements.
+- "technical": programming languages, frameworks, databases, APIs,
+  authentication, testing, deployment, Git, etc.
+- "behavioural": communication, collaboration, independence, problem-solving,
+  mentoring, teamwork, etc.
+- "system-design": architecture, scalability, reliability, system
+  decomposition, API/system architecture, or similar design topics when
+  supported by the requirements.
+- "company-fit": motivation, company-specific fit, role expectations, or
+  company-oriented questions when supported by the requirements.
 
 Do not force a category if the requirements do not justify it.
 
@@ -139,8 +195,8 @@ ${requirementText}
   const raw = await generateJson<unknown>(prompt);
   const parsed = questionGenerationResponseSchema.parse(raw);
 
-  // Gemini may occasionally return the array directly despite the
-  // requested wrapper, so normalize both valid shapes here.
+  // Gemini may occasionally return the array directly despite the requested
+  // wrapper, so normalize both valid shapes here.
   const questions = Array.isArray(parsed)
     ? parsed
     : parsed.questions;

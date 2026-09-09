@@ -3,9 +3,19 @@ import { describe, expect, it, vi } from "vitest";
 import { generateKitDraft } from "../kit-generator.js";
 import type { ExtractedRequirement } from "../requirement-extractor.js";
 import type { GeneratedQuestion } from "../question-generator.js";
+import type { ResearchResult } from "../researcher.js";
+import type { CompanyBrief } from "../company-brief-generator.js";
 
 vi.mock("../requirement-extractor.js", () => ({
   extractRequirements: vi.fn(),
+}));
+
+vi.mock("../researcher.js", () => ({
+  researchCompany: vi.fn(),
+}));
+
+vi.mock("../company-brief-generator.js", () => ({
+  generateCompanyBrief: vi.fn(),
 }));
 
 vi.mock("../question-pipeline.js", () => ({
@@ -13,9 +23,13 @@ vi.mock("../question-pipeline.js", () => ({
 }));
 
 import { extractRequirements } from "../requirement-extractor.js";
+import { researchCompany } from "../researcher.js";
+import { generateCompanyBrief } from "../company-brief-generator.js";
 import { generateQuestionPipeline } from "../question-pipeline.js";
 
 const mockedExtractRequirements = vi.mocked(extractRequirements);
+const mockedResearchCompany = vi.mocked(researchCompany);
+const mockedGenerateCompanyBrief = vi.mocked(generateCompanyBrief);
 const mockedGenerateQuestionPipeline = vi.mocked(
   generateQuestionPipeline
 );
@@ -34,6 +48,24 @@ const requirements: ExtractedRequirement[] = [
     priority: "must",
   },
 ];
+
+const research: ResearchResult = {
+  pages: [
+    {
+      url: "https://example.com/",
+      title: "Example",
+      text: "Example company research content.",
+    },
+  ],
+  pagesUsed: ["https://example.com/"],
+  gaps: [],
+};
+
+const companyBrief: CompanyBrief = {
+  summary: "Example is a technology company.",
+  what_they_do: "They build technology products.",
+  sources: ["https://example.com/"],
+};
 
 const questions: GeneratedQuestion[] = [
   {
@@ -54,9 +86,18 @@ const questions: GeneratedQuestion[] = [
   },
 ];
 
+const jobDescription =
+  "Build a React application using JavaScript.";
+
+const companyUrl = "https://example.com/";
+
 describe("generateKitDraft", () => {
-  it("extracts requirements and generates questions", async () => {
+  it("orchestrates requirements, research, company brief, and questions", async () => {
     mockedExtractRequirements.mockResolvedValue(requirements);
+
+    mockedResearchCompany.mockResolvedValue(research);
+
+    mockedGenerateCompanyBrief.mockResolvedValue(companyBrief);
 
     mockedGenerateQuestionPipeline.mockResolvedValue({
       questions,
@@ -65,10 +106,13 @@ describe("generateKitDraft", () => {
     });
 
     const result = await generateKitDraft(
-      "Build a React application using JavaScript."
+      jobDescription,
+      companyUrl
     );
 
     expect(result.requirements).toEqual(requirements);
+    expect(result.research).toEqual(research);
+    expect(result.companyBrief).toEqual(companyBrief);
     expect(result.questions).toEqual(questions);
 
     expect(result.coverage).toEqual({
@@ -78,10 +122,23 @@ describe("generateKitDraft", () => {
 
     expect(mockedExtractRequirements).toHaveBeenCalledTimes(1);
     expect(mockedExtractRequirements).toHaveBeenCalledWith(
-      "Build a React application using JavaScript."
+      jobDescription
     );
 
-    expect(mockedGenerateQuestionPipeline).toHaveBeenCalledTimes(1);
+    expect(mockedResearchCompany).toHaveBeenCalledTimes(1);
+    expect(mockedResearchCompany).toHaveBeenCalledWith(
+      companyUrl
+    );
+
+    expect(mockedGenerateCompanyBrief).toHaveBeenCalledTimes(1);
+    expect(mockedGenerateCompanyBrief).toHaveBeenCalledWith(
+      companyUrl,
+      research
+    );
+
+    expect(mockedGenerateQuestionPipeline).toHaveBeenCalledTimes(
+      1
+    );
     expect(mockedGenerateQuestionPipeline).toHaveBeenCalledWith(
       requirements
     );
@@ -89,17 +146,36 @@ describe("generateKitDraft", () => {
 
   it("rejects an empty job description", async () => {
     await expect(
-      generateKitDraft("   ")
+      generateKitDraft("   ", companyUrl)
     ).rejects.toThrow(
       "Job description cannot be empty."
     );
 
     expect(mockedExtractRequirements).not.toHaveBeenCalled();
+    expect(mockedResearchCompany).not.toHaveBeenCalled();
+    expect(mockedGenerateCompanyBrief).not.toHaveBeenCalled();
+    expect(mockedGenerateQuestionPipeline).not.toHaveBeenCalled();
+  });
+
+  it("rejects an empty company URL", async () => {
+    await expect(
+      generateKitDraft(jobDescription, "   ")
+    ).rejects.toThrow(
+      "Company URL cannot be empty."
+    );
+
+    expect(mockedExtractRequirements).not.toHaveBeenCalled();
+    expect(mockedResearchCompany).not.toHaveBeenCalled();
+    expect(mockedGenerateCompanyBrief).not.toHaveBeenCalled();
     expect(mockedGenerateQuestionPipeline).not.toHaveBeenCalled();
   });
 
   it("preserves the number of passes used by the question pipeline", async () => {
     mockedExtractRequirements.mockResolvedValue(requirements);
+
+    mockedResearchCompany.mockResolvedValue(research);
+
+    mockedGenerateCompanyBrief.mockResolvedValue(companyBrief);
 
     mockedGenerateQuestionPipeline.mockResolvedValue({
       questions,
@@ -108,7 +184,8 @@ describe("generateKitDraft", () => {
     });
 
     const result = await generateKitDraft(
-      "Build a React application using JavaScript."
+      jobDescription,
+      companyUrl
     );
 
     expect(result.coverage.passes).toBe(2);

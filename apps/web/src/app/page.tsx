@@ -161,9 +161,11 @@ export default function DashboardPage() {
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
               {kits.map((kit) => (
-                <div
+                <button
                   key={kit._id}
-                  className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm"
+                  type="button"
+                  onClick={() => router.push(`/kits/${kit._id}`)}
+                  className="w-full rounded-2xl border border-zinc-200 bg-white p-6 text-left shadow-sm transition hover:border-zinc-300 hover:shadow-md"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div>
@@ -189,7 +191,7 @@ export default function DashboardPage() {
                       {new Date(kit.createdAt).toLocaleDateString()}
                     </span>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           )}

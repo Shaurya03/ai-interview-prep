@@ -22,6 +22,33 @@ kitsRouter.get("/", async (request: AuthenticatedRequest, response, next) => {
   }
 });
 
+kitsRouter.get(
+  "/:id",
+  async (request: AuthenticatedRequest, response, next) => {
+    try {
+      const kit = await Kit.findOne({
+        _id: request.params.id,
+        ownerId: request.userId,
+      }).select(
+        "name jobDescription companyUrl daysAvailable status data createdAt updatedAt"
+      );
+
+      if (!kit) {
+        return response.status(404).json({
+          error: {
+            code: "KIT_NOT_FOUND",
+            message: "Interview kit not found.",
+          },
+        });
+      }
+
+      return response.json({ kit });
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
 kitsRouter.post("/", async (request: AuthenticatedRequest, response, next) => {
   try {
     const {

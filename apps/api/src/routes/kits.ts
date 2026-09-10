@@ -23,6 +23,10 @@ const updateBuilderSchema = z.union([
   }),
 
   z.object({
+    deleteQuestionId: z.string().trim().min(1),
+  }),
+
+  z.object({
     flashcardId: z.string().trim().min(1),
     front: z.string().trim().min(1).optional(),
     back: z.string().trim().min(1).optional(),
@@ -128,8 +132,11 @@ kitsRouter.patch(
       const data = kit.data as {
         questions?: Array<{
           id: string;
+          requirement_ids: string[];
+          category: string;
           prompt: string;
           answer_outline: string;
+          difficulty: number;
         }>;
 
         flashcards?: Array<{
@@ -143,6 +150,30 @@ kitsRouter.patch(
           summary: string;
           what_they_do: string;
           sources?: string[];
+        };
+
+        role?: {
+          requirements: Array<{
+            id: string;
+            text: string;
+            kind: string;
+            priority: string;
+          }>;
+        };
+
+        schedule?: {
+          days_available: number;
+          days: Array<{
+            day: number;
+            focus: string;
+            question_ids: string[];
+            minutes: number;
+          }>;
+        };
+
+        coverage: {
+          uncovered_requirement_ids: string[];
+          passes: number;
         };
       } | null;
 
@@ -228,6 +259,124 @@ kitsRouter.patch(
             : {}),
         };
 
+        kit.builderState = builderState;
+
+        kit.markModified("data");
+        kit.markModified("builderState");
+
+        await kit.save();
+
+        return response.json({
+          kit: {
+            _id: kit._id,
+            status: kit.status,
+            data: kit.data,
+            builderState: kit.builderState,
+          },
+        });
+      }
+
+      /*
+       * Question deletion
+       */
+      if ("deleteQuestionId" in parsed.data) {
+        const { deleteQuestionId } = parsed.data;
+
+        if (!data.questions) {
+          return response.status(409).json({
+            error: {
+              code: "KIT_DATA_MISSING",
+              message: "This kit does not contain generated questions.",
+            },
+          });
+        }
+
+        const questionExists = data.questions.some(
+          (question) => question.id === deleteQuestionId
+        );
+
+        if (!questionExists) {
+          return response.status(404).json({
+            error: {
+              code: "QUESTION_NOT_FOUND",
+              message: "Question not found.",
+            },
+          });
+        }
+
+        data.questions = data.questions.filter(
+          (question) => question.id !== deleteQuestionId
+        );
+
+        if (data.schedule?.days) {
+          data.schedule.days = data.schedule.days.map((day) => ({
+            ...day,
+            question_ids: day.question_ids.filter(
+              (questionId) => questionId !== deleteQuestionId
+            ),
+          }));
+        }
+
+        const builderState = (kit.builderState ?? {}) as {
+          editedQuestions?: Record<
+            string,
+            {
+              prompt?: string;
+              answer_outline?: string;
+            }
+          >;
+          editedFlashcards?: Record<
+            string,
+            {
+              front?: string;
+              back?: string;
+            }
+          >;
+          editedCompanyBrief?: {
+            summary?: string;
+            what_they_do?: string;
+          };
+          questionOrder?: string[];
+          deletedQuestionIds?: string[];
+          deletedFlashcardIds?: string[];
+        };
+
+        if (!builderState.deletedQuestionIds) {
+          builderState.deletedQuestionIds = [];
+        }
+
+        if (!builderState.deletedQuestionIds.includes(deleteQuestionId)) {
+          builderState.deletedQuestionIds.push(deleteQuestionId);
+        }
+
+        if (builderState.questionOrder) {
+          builderState.questionOrder = builderState.questionOrder.filter(
+            (questionId) => questionId !== deleteQuestionId
+          );
+        }
+
+        /*
+         * Recalculate requirement coverage after deletion.
+         * A requirement is covered when at least one remaining
+         * question references it.
+         */
+        if (data.role?.requirements && data.coverage) {
+          const remainingQuestionRequirementIds = new Set(
+            data.questions.flatMap(
+              (question) => question.requirement_ids
+            )
+          );
+
+          data.coverage.uncovered_requirement_ids =
+            data.role.requirements
+              .filter(
+                (requirement) =>
+                  !remainingQuestionRequirementIds.has(requirement.id)
+              )
+              .map((requirement) => requirement.id);
+        }
+
+        kit.data = data;
         kit.builderState = builderState;
 
         kit.markModified("data");

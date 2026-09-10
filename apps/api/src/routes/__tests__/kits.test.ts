@@ -34,9 +34,9 @@ const mockKit = {
       }
     >,
     editedCompanyBrief: {},
-    questionOrder: [],
-    deletedQuestionIds: [],
-    deletedFlashcardIds: [],
+    questionOrder: [] as string[],
+    deletedQuestionIds: [] as string[],
+    deletedFlashcardIds: [] as string[],
   },
   save: mockSave,
   markModified: mockMarkModified,
@@ -835,5 +835,170 @@ describe("PATCH /kits/:id/builder", () => {
         "https://example.com/company",
       ],
     });
+  });
+
+  it("deletes a question successfully", async () => {
+    mockedKit.findOne.mockResolvedValue(mockKit as never);
+
+    mockKit.data = {
+      source: {
+        company: "Test Company",
+        company_url: "https://example.com",
+        role: "Software Engineer",
+        location: "Remote",
+        jd_chars: 100,
+        researched_at: "2026-01-01T00:00:00.000Z",
+        pages_used: ["https://example.com"],
+      },
+
+      company_brief: {
+        summary: "Test summary.",
+        what_they_do: "Test description.",
+        sources: ["https://example.com"],
+      },
+
+      role: {
+        title: "Software Engineer",
+        seniority: "Mid-level",
+        responsibilities: ["Build software"],
+        requirements: [
+          {
+            id: "r1",
+            text: "React",
+            kind: "technical",
+            priority: "must",
+          },
+          {
+            id: "r2",
+            text: "Node.js",
+            kind: "technical",
+            priority: "must",
+          },
+        ],
+      },
+
+      questions: [
+        {
+          id: "q1",
+          requirement_ids: ["r1"],
+          category: "technical",
+          prompt: "What is React?",
+          answer_outline: "Discuss components.",
+          difficulty: 2,
+        },
+        {
+          id: "q2",
+          requirement_ids: ["r2"],
+          category: "technical",
+          prompt: "What is Node.js?",
+          answer_outline: "Discuss the runtime.",
+          difficulty: 2,
+        },
+      ],
+
+      flashcards: [],
+
+      schedule: {
+        days_available: 2,
+        days: [
+          {
+            day: 1,
+            focus: "React",
+            question_ids: ["q1"],
+            minutes: 30,
+          },
+          {
+            day: 2,
+            focus: "Node.js",
+            question_ids: ["q2"],
+            minutes: 30,
+          },
+        ],
+      },
+
+      coverage: {
+        uncovered_requirement_ids: [],
+        passes: 2,
+      },
+    };
+
+    mockKit.builderState = {
+      editedQuestions: {},
+      editedFlashcards: {},
+      editedCompanyBrief: {},
+      questionOrder: ["q1", "q2"],
+      deletedQuestionIds: [],
+      deletedFlashcardIds: [],
+    };
+
+    const app = createApp();
+
+    const response = await request(app)
+      .patch("/kits/kit-123/builder")
+      .send({
+        deleteQuestionId: "q1",
+      });
+
+    expect(response.status).toBe(200);
+
+    expect(mockKit.data.questions).toHaveLength(1);
+    expect(mockKit.data.questions[0].id).toBe("q2");
+
+    expect(mockKit.data.schedule.days[0].question_ids).toEqual([]);
+    expect(mockKit.data.schedule.days[1].question_ids).toEqual(["q2"]);
+
+    expect(mockKit.builderState.deletedQuestionIds).toContain("q1");
+    expect(mockKit.builderState.questionOrder).toEqual(["q2"]);
+
+    expect(mockKit.data.coverage.uncovered_requirement_ids).toEqual([
+      "r1",
+    ]);
+
+    expect(mockMarkModified).toHaveBeenCalledWith("data");
+    expect(mockMarkModified).toHaveBeenCalledWith("builderState");
+    expect(mockSave).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 404 when the question to delete does not exist", async () => {
+    mockedKit.findOne.mockResolvedValue(mockKit as never);
+
+    mockKit.data = {
+      questions: [],
+      flashcards: [],
+      coverage: {
+        uncovered_requirement_ids: [],
+        passes: 1,
+      },
+    };
+
+    const app = createApp();
+
+    const response = await request(app)
+      .patch("/kits/kit-123/builder")
+      .send({
+        deleteQuestionId: "q999",
+      });
+
+    expect(response.status).toBe(404);
+
+    expect(response.body.error.code).toBe(
+      "QUESTION_NOT_FOUND"
+    );
+  });
+
+  it("returns 400 for an invalid question deletion payload", async () => {
+    const app = createApp();
+
+    const response = await request(app)
+      .patch("/kits/kit-123/builder")
+      .send({
+        deleteQuestionId: "",
+      });
+
+    expect(response.status).toBe(400);
+
+    expect(response.body.error.code).toBe(
+      "INVALID_BUILDER_UPDATE"
+    );
   });
 });

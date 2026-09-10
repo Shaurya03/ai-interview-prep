@@ -110,6 +110,10 @@ export default function KitDetailPage() {
 
   const [isSavingQuestion, setIsSavingQuestion] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [isDeletingQuestionId, setIsDeletingQuestionId] = useState<string | null>(
+    null
+  );
+  const [deleteQuestionError, setDeleteQuestionError] = useState("");
 
   const [editingFlashcardId, setEditingFlashcardId] = useState<string | null>(
     null
@@ -299,6 +303,72 @@ export default function KitDetailPage() {
       setSaveError("Unable to connect to the server.");
     } finally {
       setIsSavingQuestion(false);
+    }
+  }
+
+  async function deleteQuestion(questionId: string) {
+    if (!kit) {
+      return;
+    }
+
+    const question = kit.data?.questions.find(
+      (currentQuestion) => currentQuestion.id === questionId
+    );
+
+    if (!question) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Delete this question? It will also be removed from the preparation schedule."
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeletingQuestionId(questionId);
+    setDeleteQuestionError("");
+
+    try {
+      const response = await fetch(`${API_URL}/kits/${kit._id}/builder`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          deleteQuestionId: questionId,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setDeleteQuestionError(
+          result.error?.message ?? "Unable to delete question."
+        );
+        return;
+      }
+
+      setKit((currentKit) => {
+        if (!currentKit || !result.kit?.data) {
+          return currentKit;
+        }
+
+        return {
+          ...currentKit,
+          data: result.kit.data,
+        };
+      });
+
+      if (editingQuestionId === questionId) {
+        cancelEditingQuestion();
+      }
+    } catch {
+      setDeleteQuestionError("Unable to connect to the server.");
+    } finally {
+      setIsDeletingQuestionId(null);
     }
   }
 
@@ -1010,15 +1080,29 @@ export default function KitDetailPage() {
                               </div>
                             </div>
 
-                            <button
-                              type="button"
-                              onClick={() =>
-                                startEditingQuestion(question)
-                              }
-                              className="shrink-0 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50"
-                            >
-                              Edit
-                            </button>
+                            <div className="flex shrink-0 gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  startEditingQuestion(question)
+                                }
+                                disabled={isDeletingQuestionId === question.id}
+                                className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                Edit
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => deleteQuestion(question.id)}
+                                disabled={isDeletingQuestionId === question.id}
+                                className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {isDeletingQuestionId === question.id
+                                  ? "Deleting..."
+                                  : "Delete"}
+                              </button>
+                            </div>
                           </div>
 
                           <div className="mt-4 rounded-xl bg-zinc-50 p-4">
@@ -1036,6 +1120,12 @@ export default function KitDetailPage() {
                   );
                 })}
               </div>
+
+              {deleteQuestionError && (
+                <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+                  {deleteQuestionError}
+                </div>
+              )}
             </section>
 
             <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">

@@ -119,6 +119,12 @@ export default function KitDetailPage() {
   const [isSavingFlashcard, setIsSavingFlashcard] = useState(false);
   const [flashcardSaveError, setFlashcardSaveError] = useState("");
 
+  const [isEditingCompanyBrief, setIsEditingCompanyBrief] = useState(false);
+  const [editedCompanySummary, setEditedCompanySummary] = useState("");
+  const [editedWhatTheyDo, setEditedWhatTheyDo] = useState("");
+  const [isSavingCompanyBrief, setIsSavingCompanyBrief] = useState(false);
+  const [companyBriefSaveError, setCompanyBriefSaveError] = useState("");
+
   useEffect(() => {
     let cancelled = false;
 
@@ -382,6 +388,95 @@ export default function KitDetailPage() {
     }
   }
 
+  function startEditingCompanyBrief() {
+    if (!kit?.data?.company_brief) {
+      return;
+    }
+
+    setEditedCompanySummary(kit.data.company_brief.summary);
+    setEditedWhatTheyDo(kit.data.company_brief.what_they_do);
+    setCompanyBriefSaveError("");
+    setIsEditingCompanyBrief(true);
+  }
+
+  function cancelEditingCompanyBrief() {
+    setIsEditingCompanyBrief(false);
+    setEditedCompanySummary("");
+    setEditedWhatTheyDo("");
+    setCompanyBriefSaveError("");
+  }
+
+  async function saveCompanyBrief() {
+    if (!kit) {
+      return;
+    }
+
+    if (!editedCompanySummary.trim() || !editedWhatTheyDo.trim()) {
+      setCompanyBriefSaveError(
+        "Summary and what they do cannot be empty."
+      );
+      return;
+    }
+
+    setIsSavingCompanyBrief(true);
+    setCompanyBriefSaveError("");
+
+    try {
+      const response = await fetch(`${API_URL}/kits/${kit._id}/builder`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          companyBrief: {
+            summary: editedCompanySummary.trim(),
+            what_they_do: editedWhatTheyDo.trim(),
+          },
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setCompanyBriefSaveError(
+          result.error?.message ?? "Unable to save company brief."
+        );
+        return;
+      }
+
+      setKit((currentKit) => {
+        if (!currentKit) {
+          return currentKit;
+        }
+
+        const currentData = currentKit.data;
+
+        if (!currentData?.company_brief) {
+          return currentKit;
+        }
+
+        return {
+          ...currentKit,
+          data: {
+            ...currentData,
+            company_brief: {
+              ...currentData.company_brief,
+              summary: editedCompanySummary.trim(),
+              what_they_do: editedWhatTheyDo.trim(),
+            },
+          },
+        };
+      });
+
+      cancelEditingCompanyBrief();
+    } catch {
+      setCompanyBriefSaveError("Unable to connect to the server.");
+    } finally {
+      setIsSavingCompanyBrief(false);
+    }
+  }
+
   if (isLoading) {
     return (
       <main className="min-h-screen bg-zinc-50 px-6 py-12 text-zinc-950">
@@ -592,28 +687,107 @@ export default function KitDetailPage() {
         {kit.status === "ready" && data && (
           <div className="mt-6 space-y-6">
             <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-              <h2 className="text-xl font-semibold">Company brief</h2>
+              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                <div>
+                  <h2 className="text-xl font-semibold">Company brief</h2>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    Edit the research summary while keeping the original sources.
+                  </p>
+                </div>
+
+                {!isEditingCompanyBrief && (
+                  <button
+                    type="button"
+                    onClick={startEditingCompanyBrief}
+                    className="shrink-0 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50"
+                  >
+                    Edit
+                  </button>
+                )}
+              </div>
 
               <div className="mt-5 space-y-5">
-                <div>
-                  <p className="text-sm font-medium text-zinc-500">
-                    Summary
-                  </p>
+                {isEditingCompanyBrief ? (
+                  <div>
+                    <label className="block">
+                      <span className="text-sm font-medium text-zinc-700">
+                        Summary
+                      </span>
 
-                  <p className="mt-2 text-sm leading-7 text-zinc-700">
-                    {data.company_brief.summary}
-                  </p>
-                </div>
+                      <textarea
+                        value={editedCompanySummary}
+                        onChange={(event) =>
+                          setEditedCompanySummary(event.target.value)
+                        }
+                        rows={5}
+                        className="mt-2 w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-sm leading-6 outline-none transition focus:border-zinc-950 focus:ring-1 focus:ring-zinc-950"
+                      />
+                    </label>
 
-                <div>
-                  <p className="text-sm font-medium text-zinc-500">
-                    What they do
-                  </p>
+                    <label className="mt-4 block">
+                      <span className="text-sm font-medium text-zinc-700">
+                        What they do
+                      </span>
 
-                  <p className="mt-2 text-sm leading-7 text-zinc-700">
-                    {data.company_brief.what_they_do}
-                  </p>
-                </div>
+                      <textarea
+                        value={editedWhatTheyDo}
+                        onChange={(event) =>
+                          setEditedWhatTheyDo(event.target.value)
+                        }
+                        rows={5}
+                        className="mt-2 w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-sm leading-6 outline-none transition focus:border-zinc-950 focus:ring-1 focus:ring-zinc-950"
+                      />
+                    </label>
+
+                    {companyBriefSaveError && (
+                      <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+                        {companyBriefSaveError}
+                      </div>
+                    )}
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={saveCompanyBrief}
+                        disabled={isSavingCompanyBrief}
+                        className="rounded-lg bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isSavingCompanyBrief ? "Saving..." : "Save changes"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={cancelEditingCompanyBrief}
+                        disabled={isSavingCompanyBrief}
+                        className="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <p className="text-sm font-medium text-zinc-500">
+                        Summary
+                      </p>
+
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-zinc-700">
+                        {data.company_brief.summary}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-sm font-medium text-zinc-500">
+                        What they do
+                      </p>
+
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-zinc-700">
+                        {data.company_brief.what_they_do}
+                      </p>
+                    </div>
+                  </>
+                )}
 
                 {data.company_brief.sources.length > 0 && (
                   <div>

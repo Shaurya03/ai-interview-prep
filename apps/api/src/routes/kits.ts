@@ -27,6 +27,13 @@ const updateBuilderSchema = z.union([
     front: z.string().trim().min(1).optional(),
     back: z.string().trim().min(1).optional(),
   }),
+
+  z.object({
+    companyBrief: z.object({
+      summary: z.string().trim().min(1),
+      what_they_do: z.string().trim().min(1),
+    }),
+  }),
 ]);
 
 export const kitsRouter = Router();
@@ -131,6 +138,12 @@ kitsRouter.patch(
           back: string;
           requirement_ids: string[];
         }>;
+
+        company_brief?: {
+          summary: string;
+          what_they_do: string;
+          sources?: string[];
+        };
       } | null;
 
       if (!data) {
@@ -190,6 +203,17 @@ kitsRouter.patch(
               answer_outline?: string;
             }
           >;
+          editedFlashcards?: Record<
+            string,
+            {
+              front?: string;
+              back?: string;
+            }
+          >;
+          editedCompanyBrief?: {
+            summary?: string;
+            what_they_do?: string;
+          };
         };
 
         if (!builderState.editedQuestions) {
@@ -224,43 +248,116 @@ kitsRouter.patch(
       /*
        * Flashcard update
        */
-      const {
-        flashcardId,
-        front,
-        back,
-      } = parsed.data;
+      if ("flashcardId" in parsed.data) {
+        const {
+          flashcardId,
+          front,
+          back,
+        } = parsed.data;
 
-      if (!data.flashcards) {
-        return response.status(409).json({
-          error: {
-            code: "KIT_DATA_MISSING",
-            message: "This kit does not contain generated flashcards.",
+        if (!data.flashcards) {
+          return response.status(409).json({
+            error: {
+              code: "KIT_DATA_MISSING",
+              message: "This kit does not contain generated flashcards.",
+            },
+          });
+        }
+
+        const flashcard = data.flashcards.find(
+          (item) => item.id === flashcardId
+        );
+
+        if (!flashcard) {
+          return response.status(404).json({
+            error: {
+              code: "FLASHCARD_NOT_FOUND",
+              message: "Flashcard not found.",
+            },
+          });
+        }
+
+        if (front !== undefined) {
+          flashcard.front = front;
+        }
+
+        if (back !== undefined) {
+          flashcard.back = back;
+        }
+
+        const builderState = (kit.builderState ?? {}) as {
+          editedQuestions?: Record<
+            string,
+            {
+              prompt?: string;
+              answer_outline?: string;
+            }
+          >;
+          editedFlashcards?: Record<
+            string,
+            {
+              front?: string;
+              back?: string;
+            }
+          >;
+          editedCompanyBrief?: {
+            summary?: string;
+            what_they_do?: string;
+          };
+        };
+
+        if (!builderState.editedFlashcards) {
+          builderState.editedFlashcards = {};
+        }
+
+        builderState.editedFlashcards[flashcardId] = {
+          ...(builderState.editedFlashcards[flashcardId] ?? {}),
+          ...(front !== undefined ? { front } : {}),
+          ...(back !== undefined ? { back } : {}),
+        };
+
+        kit.builderState = builderState;
+
+        kit.markModified("data");
+        kit.markModified("builderState");
+
+        await kit.save();
+
+        return response.json({
+          kit: {
+            _id: kit._id,
+            status: kit.status,
+            data: kit.data,
+            builderState: kit.builderState,
           },
         });
       }
 
-      const flashcard = data.flashcards.find(
-        (item) => item.id === flashcardId
-      );
+      /*
+       * Company brief update
+       */
+      const { companyBrief } = parsed.data;
 
-      if (!flashcard) {
+      if (!data.company_brief) {
         return response.status(404).json({
           error: {
-            code: "FLASHCARD_NOT_FOUND",
-            message: "Flashcard not found.",
+            code: "COMPANY_BRIEF_NOT_FOUND",
+            message: "This kit does not contain a company brief.",
           },
         });
       }
 
-      if (front !== undefined) {
-        flashcard.front = front;
-      }
-
-      if (back !== undefined) {
-        flashcard.back = back;
-      }
+      data.company_brief.summary = companyBrief.summary;
+      data.company_brief.what_they_do = companyBrief.what_they_do;
 
       const builderState = (kit.builderState ?? {}) as {
+        editedQuestions?: Record<
+          string,
+          {
+            prompt?: string;
+            answer_outline?: string;
+          }
+        >;
         editedFlashcards?: Record<
           string,
           {
@@ -268,18 +365,19 @@ kitsRouter.patch(
             back?: string;
           }
         >;
+        editedCompanyBrief?: {
+          summary?: string;
+          what_they_do?: string;
+        };
       };
 
-      if (!builderState.editedFlashcards) {
-        builderState.editedFlashcards = {};
-      }
-
-      builderState.editedFlashcards[flashcardId] = {
-        ...(builderState.editedFlashcards[flashcardId] ?? {}),
-        ...(front !== undefined ? { front } : {}),
-        ...(back !== undefined ? { back } : {}),
+      builderState.editedCompanyBrief = {
+        ...(builderState.editedCompanyBrief ?? {}),
+        summary: companyBrief.summary,
+        what_they_do: companyBrief.what_they_do,
       };
 
+      kit.data = data;
       kit.builderState = builderState;
 
       kit.markModified("data");

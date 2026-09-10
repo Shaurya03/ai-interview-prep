@@ -679,4 +679,161 @@ describe("PATCH /kits/:id/builder", () => {
 
     expect(mockSave).not.toHaveBeenCalled();
   });
+
+  it("updates the company brief successfully", async () => {
+    mockedKit.findOne.mockResolvedValue(mockKit as never);
+
+    mockKit.data = {
+      source: {
+        company: "Test Company",
+        company_url: "https://example.com",
+        role: "Software Engineer",
+        location: "Remote",
+        jd_chars: 100,
+        researched_at: "2026-01-01T00:00:00.000Z",
+        pages_used: ["https://example.com"],
+      },
+      company_brief: {
+        summary: "Original company summary.",
+        what_they_do: "Original company description.",
+        sources: ["https://example.com"],
+      },
+      role: {
+        title: "Software Engineer",
+        seniority: "Mid-level",
+        responsibilities: ["Build software"],
+        requirements: [],
+      },
+      questions: [],
+      flashcards: [],
+      schedule: {
+        days_available: 5,
+        days: [],
+      },
+      coverage: {
+        uncovered_requirement_ids: [],
+        passes: 1,
+      },
+    };
+
+    mockKit.builderState = {
+      editedQuestions: {},
+      editedFlashcards: {},
+      editedCompanyBrief: {},
+      questionOrder: [],
+      deletedQuestionIds: [],
+      deletedFlashcardIds: [],
+    };
+
+    const app = createApp();
+
+    const response = await request(app)
+      .patch("/kits/kit-123/builder")
+      .send({
+        companyBrief: {
+          summary: "Updated company summary.",
+          what_they_do: "Updated company description.",
+        },
+      });
+
+    expect(response.status).toBe(200);
+
+    expect(mockKit.data.company_brief).toEqual({
+      summary: "Updated company summary.",
+      what_they_do: "Updated company description.",
+      sources: ["https://example.com"],
+    });
+
+    expect(mockKit.builderState.editedCompanyBrief).toEqual({
+      summary: "Updated company summary.",
+      what_they_do: "Updated company description.",
+    });
+
+    expect(mockMarkModified).toHaveBeenCalledWith("data");
+    expect(mockMarkModified).toHaveBeenCalledWith("builderState");
+    expect(mockSave).toHaveBeenCalledTimes(1);
+
+    expect(response.body.kit.status).toBe("ready");
+  });
+
+  it("returns 404 when the company brief does not exist", async () => {
+    mockedKit.findOne.mockResolvedValue(mockKit as never);
+
+    mockKit.data = {
+      questions: [],
+      flashcards: [],
+    };
+
+    const app = createApp();
+
+    const response = await request(app)
+      .patch("/kits/kit-123/builder")
+      .send({
+        companyBrief: {
+          summary: "Updated summary.",
+          what_they_do: "Updated description.",
+        },
+      });
+
+    expect(response.status).toBe(404);
+
+    expect(response.body.error.code).toBe(
+      "COMPANY_BRIEF_NOT_FOUND"
+    );
+  });
+
+  it("returns 400 for an invalid company brief payload", async () => {
+    const app = createApp();
+
+    const response = await request(app)
+      .patch("/kits/kit-123/builder")
+      .send({
+        companyBrief: {
+          summary: "",
+          what_they_do: "",
+        },
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe(
+      "INVALID_BUILDER_UPDATE"
+    );
+  });
+
+  it("preserves company brief sources when the brief is edited", async () => {
+    mockedKit.findOne.mockResolvedValue(mockKit as never);
+
+    mockKit.data = {
+      company_brief: {
+        summary: "Original summary.",
+        what_they_do: "Original description.",
+        sources: [
+          "https://example.com/about",
+          "https://example.com/company",
+        ],
+      },
+    };
+
+    const app = createApp();
+
+    const response = await request(app)
+      .patch("/kits/kit-123/builder")
+      .send({
+        companyBrief: {
+          summary: "Edited summary.",
+          what_they_do: "Edited description.",
+        },
+      });
+
+    expect(response.status).toBe(200);
+
+    expect(response.body.kit.data.company_brief).toEqual({
+      summary: "Edited summary.",
+      what_they_do: "Edited description.",
+      sources: [
+        "https://example.com/about",
+        "https://example.com/company",
+      ],
+    });
+  });
 });

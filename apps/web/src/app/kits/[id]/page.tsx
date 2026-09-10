@@ -111,6 +111,14 @@ export default function KitDetailPage() {
   const [isSavingQuestion, setIsSavingQuestion] = useState(false);
   const [saveError, setSaveError] = useState("");
 
+  const [editingFlashcardId, setEditingFlashcardId] = useState<string | null>(
+    null
+  );
+  const [editedFront, setEditedFront] = useState("");
+  const [editedBack, setEditedBack] = useState("");
+  const [isSavingFlashcard, setIsSavingFlashcard] = useState(false);
+  const [flashcardSaveError, setFlashcardSaveError] = useState("");
+
   useEffect(() => {
     let cancelled = false;
 
@@ -285,6 +293,92 @@ export default function KitDetailPage() {
       setSaveError("Unable to connect to the server.");
     } finally {
       setIsSavingQuestion(false);
+    }
+  }
+
+  function startEditingFlashcard(flashcard: Flashcard) {
+    setEditingFlashcardId(flashcard.id);
+    setEditedFront(flashcard.front);
+    setEditedBack(flashcard.back);
+    setFlashcardSaveError("");
+  }
+
+  function cancelEditingFlashcard() {
+    setEditingFlashcardId(null);
+    setEditedFront("");
+    setEditedBack("");
+    setFlashcardSaveError("");
+  }
+
+  async function saveFlashcard(flashcardId: string) {
+    if (!kit) {
+      return;
+    }
+
+    if (!editedFront.trim() || !editedBack.trim()) {
+      setFlashcardSaveError("Question and answer cannot be empty.");
+      return;
+    }
+
+    setIsSavingFlashcard(true);
+    setFlashcardSaveError("");
+
+    try {
+      const response = await fetch(`${API_URL}/kits/${kit._id}/builder`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          flashcardId,
+          front: editedFront.trim(),
+          back: editedBack.trim(),
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setFlashcardSaveError(
+          result.error?.message ?? "Unable to save flashcard."
+        );
+        return;
+      }
+
+      setKit((currentKit) => {
+        if (!currentKit) {
+          return currentKit;
+        }
+
+        const currentData = currentKit.data;
+
+        if (!currentData?.flashcards) {
+          return currentKit;
+        }
+
+        return {
+          ...currentKit,
+          data: {
+            ...currentData,
+            flashcards: currentData.flashcards.map((flashcard) =>
+              flashcard.id === flashcardId
+                ? {
+                  ...flashcard,
+                  front: editedFront.trim(),
+                  back: editedBack.trim(),
+                }
+                : flashcard
+            ),
+          },
+        };
+      });
+
+      cancelEditingFlashcard();
+    } catch {
+      setFlashcardSaveError("Unable to connect to the server.");
+    } finally {
+      setIsSavingFlashcard(false);
     }
   }
 
@@ -604,8 +698,8 @@ export default function KitDetailPage() {
 
                           <span
                             className={`rounded-full px-2.5 py-1 text-xs font-medium ${requirement.priority === "must"
-                                ? "bg-zinc-950 text-white"
-                                : "bg-zinc-100 text-zinc-600"
+                              ? "bg-zinc-950 text-white"
+                              : "bg-zinc-100 text-zinc-600"
                               }`}
                           >
                             {requirement.priority}
@@ -844,30 +938,122 @@ export default function KitDetailPage() {
               </div>
 
               <div className="mt-6 grid gap-4 md:grid-cols-2">
-                {data.flashcards.map((flashcard) => (
-                  <article
-                    key={flashcard.id}
-                    className="rounded-xl border border-zinc-200 p-5"
-                  >
-                    <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Question
-                    </p>
+                {data.flashcards.map((flashcard) => {
+                  const isEditing = editingFlashcardId === flashcard.id;
 
-                    <h3 className="mt-2 font-medium leading-6 text-zinc-900">
-                      {flashcard.front}
-                    </h3>
+                  return (
+                    <article
+                      key={flashcard.id}
+                      className="rounded-xl border border-zinc-200 p-5"
+                    >
+                      {isEditing ? (
+                        <div>
+                          <div className="mb-4 flex items-center justify-between gap-3">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                              Flashcard
+                            </span>
 
-                    <div className="my-4 border-t border-zinc-100" />
+                            <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600">
+                              {flashcard.id}
+                            </span>
+                          </div>
 
-                    <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Answer
-                    </p>
+                          <label className="block">
+                            <span className="text-sm font-medium text-zinc-700">
+                              Question
+                            </span>
 
-                    <p className="mt-2 text-sm leading-6 text-zinc-700">
-                      {flashcard.back}
-                    </p>
-                  </article>
-                ))}
+                            <textarea
+                              value={editedFront}
+                              onChange={(event) =>
+                                setEditedFront(event.target.value)
+                              }
+                              rows={3}
+                              className="mt-2 w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-sm leading-6 outline-none transition focus:border-zinc-950 focus:ring-1 focus:ring-zinc-950"
+                            />
+                          </label>
+
+                          <label className="mt-4 block">
+                            <span className="text-sm font-medium text-zinc-700">
+                              Answer
+                            </span>
+
+                            <textarea
+                              value={editedBack}
+                              onChange={(event) =>
+                                setEditedBack(event.target.value)
+                              }
+                              rows={5}
+                              className="mt-2 w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-sm leading-6 outline-none transition focus:border-zinc-950 focus:ring-1 focus:ring-zinc-950"
+                            />
+                          </label>
+
+                          {flashcardSaveError && (
+                            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+                              {flashcardSaveError}
+                            </div>
+                          )}
+
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => saveFlashcard(flashcard.id)}
+                              disabled={isSavingFlashcard}
+                              className="rounded-lg bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {isSavingFlashcard
+                                ? "Saving..."
+                                : "Save changes"}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={cancelEditingFlashcard}
+                              disabled={isSavingFlashcard}
+                              className="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                                Question
+                              </p>
+
+                              <h3 className="mt-2 font-medium leading-6 text-zinc-900">
+                                {flashcard.front}
+                              </h3>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                startEditingFlashcard(flashcard)
+                              }
+                              className="shrink-0 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50"
+                            >
+                              Edit
+                            </button>
+                          </div>
+
+                          <div className="my-4 border-t border-zinc-100" />
+
+                          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                            Answer
+                          </p>
+
+                          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-700">
+                            {flashcard.back}
+                          </p>
+                        </div>
+                      )}
+                    </article>
+                  );
+                })}
               </div>
             </section>
 

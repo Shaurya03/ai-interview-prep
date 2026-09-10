@@ -26,7 +26,13 @@ const mockKit = {
         answer_outline: string;
       }
     >,
-    editedFlashcards: {},
+    editedFlashcards: {} as Record<
+      string,
+      {
+        front: string;
+        back: string;
+      }
+    >,
     editedCompanyBrief: {},
     questionOrder: [],
     deletedQuestionIds: [],
@@ -550,6 +556,124 @@ describe("PATCH /kits/:id/builder", () => {
       error: {
         code: "QUESTION_NOT_FOUND",
         message: "Question not found.",
+      },
+    });
+
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it("updates a flashcard successfully", async () => {
+    mockedKit.findOne.mockResolvedValue(mockKit as never);
+
+    const app = createApp();
+
+    const response = await request(app)
+      .patch("/kits/kit-123/builder")
+      .send({
+        flashcardId: "f1",
+        front: "What is React?",
+        back: "A JavaScript library for building user interfaces.",
+      })
+      .expect(200);
+
+    expect(mockedKit.findOne).toHaveBeenCalledWith({
+      _id: "kit-123",
+      ownerId: "user-123",
+    });
+
+    expect(mockKit.data.flashcards[0]).toMatchObject({
+      id: "f1",
+      front: "What is React?",
+      back: "A JavaScript library for building user interfaces.",
+    });
+
+    expect(mockKit.builderState.editedFlashcards.f1).toEqual({
+      front: "What is React?",
+      back: "A JavaScript library for building user interfaces.",
+    });
+
+    expect(mockMarkModified).toHaveBeenCalledWith("data");
+    expect(mockMarkModified).toHaveBeenCalledWith("builderState");
+
+    expect(mockSave).toHaveBeenCalledTimes(1);
+
+    expect(response.body.kit.status).toBe("ready");
+
+    expect(response.body.kit.data.flashcards[0]).toMatchObject({
+      id: "f1",
+      front: "What is React?",
+      back: "A JavaScript library for building user interfaces.",
+    });
+  });
+
+  it("returns 404 when the flashcard does not exist", async () => {
+    mockedKit.findOne.mockResolvedValue(mockKit as never);
+
+    const app = createApp();
+
+    const response = await request(app)
+      .patch("/kits/kit-123/builder")
+      .send({
+        flashcardId: "does-not-exist",
+        front: "Updated front",
+      })
+      .expect(404);
+
+    expect(response.body).toEqual({
+      error: {
+        code: "FLASHCARD_NOT_FOUND",
+        message: "Flashcard not found.",
+      },
+    });
+
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for an invalid flashcard payload", async () => {
+    mockedKit.findOne.mockResolvedValue(mockKit as never);
+
+    const app = createApp();
+
+    const response = await request(app)
+      .patch("/kits/kit-123/builder")
+      .send({
+        flashcardId: "",
+        front: "",
+      })
+      .expect(400);
+
+    expect(response.body.error.code).toBe("INVALID_BUILDER_UPDATE");
+
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 when generated flashcards are missing", async () => {
+    mockKit.data = {
+      questions: [
+        {
+          id: "q1",
+          prompt: "How does React state work?",
+          answer_outline: "Explain state and re-renders.",
+        },
+      ],
+    };
+
+    mockedKit.findOne.mockResolvedValue(mockKit as never);
+
+    const app = createApp();
+
+    const response = await request(app)
+      .patch("/kits/kit-123/builder")
+      .send({
+        flashcardId: "f1",
+        front: "What is React?",
+      })
+      .expect(409);
+
+    expect(response.body).toEqual({
+      error: {
+        code: "KIT_DATA_MISSING",
+        message: "This kit does not contain generated flashcards.",
       },
     });
 

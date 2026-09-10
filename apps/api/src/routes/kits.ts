@@ -1,7 +1,10 @@
 import { Router } from "express";
 import { z } from "zod";
 import { kitSchema } from "@ai-interview-prep/shared";
-import { requireAuth, type AuthenticatedRequest } from "../middleware/require-auth.js";
+import {
+  requireAuth,
+  type AuthenticatedRequest,
+} from "../middleware/require-auth.js";
 import { Kit } from "../models/kit.js";
 import { generateKitDraft } from "../services/kit-generator.js";
 
@@ -12,23 +15,40 @@ const createKitSchema = z.object({
   daysAvailable: z.number().int().min(1).max(60),
 });
 
-const updateQuestionSchema = z.object({
-  questionId: z.string().trim().min(1),
-  prompt: z.string().trim().min(1).optional(),
-  answer_outline: z.string().trim().min(1).optional(),
-});
+const updateBuilderSchema = z.union([
+  z.object({
+    questionId: z.string().trim().min(1),
+    prompt: z.string().trim().min(1).optional(),
+    answer_outline: z.string().trim().min(1).optional(),
+  }),
+
+  z.object({
+    flashcardId: z.string().trim().min(1),
+    front: z.string().trim().min(1).optional(),
+    back: z.string().trim().min(1).optional(),
+  }),
+]);
 
 export const kitsRouter = Router();
+
 kitsRouter.use(requireAuth);
 
-kitsRouter.get("/", async (request: AuthenticatedRequest, response, next) => {
-  try {
-    const kits = await Kit.find({ ownerId: request.userId }).sort({ updatedAt: -1 }).select("name companyUrl daysAvailable status createdAt updatedAt");
-    return response.json({ kits });
-  } catch (error) {
-    return next(error);
+kitsRouter.get(
+  "/",
+  async (request: AuthenticatedRequest, response, next) => {
+    try {
+      const kits = await Kit.find({ ownerId: request.userId })
+        .sort({ updatedAt: -1 })
+        .select(
+          "name companyUrl daysAvailable status createdAt updatedAt"
+        );
+
+      return response.json({ kits });
+    } catch (error) {
+      return next(error);
+    }
   }
-});
+);
 
 kitsRouter.get(
   "/:id",
@@ -57,130 +77,236 @@ kitsRouter.get(
   }
 );
 
-kitsRouter.patch("/:id/builder", async (request: AuthenticatedRequest, response) => {
-  try {
-    const userId = request.userId;
+kitsRouter.patch(
+  "/:id/builder",
+  async (request: AuthenticatedRequest, response) => {
+    try {
+      const userId = request.userId;
 
-    const kit = await Kit.findOne({
-      _id: request.params.id,
-      ownerId: userId,
-    });
-
-    if (!kit) {
-      return response.status(404).json({
-        error: {
-          code: "KIT_NOT_FOUND",
-          message: "Interview kit not found.",
-        },
+      const kit = await Kit.findOne({
+        _id: request.params.id,
+        ownerId: userId,
       });
-    }
 
-    if (kit.status !== "ready") {
-      return response.status(409).json({
-        error: {
-          code: "KIT_NOT_READY",
-          message: "Only a generated kit can be edited.",
-        },
-      });
-    }
+      if (!kit) {
+        return response.status(404).json({
+          error: {
+            code: "KIT_NOT_FOUND",
+            message: "Interview kit not found.",
+          },
+        });
+      }
 
-    const parsed = updateQuestionSchema.safeParse(request.body);
+      if (kit.status !== "ready") {
+        return response.status(409).json({
+          error: {
+            code: "KIT_NOT_READY",
+            message: "Only a generated kit can be edited.",
+          },
+        });
+      }
 
-    if (!parsed.success) {
-      return response.status(400).json({
-        error: {
-          code: "INVALID_BUILDER_UPDATE",
-          message: "Invalid question update.",
-          details: parsed.error.flatten(),
-        },
-      });
-    }
+      const parsed = updateBuilderSchema.safeParse(request.body);
 
-    const { questionId, prompt, answer_outline } = parsed.data;
+      if (!parsed.success) {
+        return response.status(400).json({
+          error: {
+            code: "INVALID_BUILDER_UPDATE",
+            message: "Invalid builder update.",
+            details: parsed.error.flatten(),
+          },
+        });
+      }
 
-    const data = kit.data as {
-      questions?: Array<{
-        id: string;
-        prompt: string;
-        answer_outline: string;
-      }>;
-    } | null;
+      const data = kit.data as {
+        questions?: Array<{
+          id: string;
+          prompt: string;
+          answer_outline: string;
+        }>;
 
-    if (!data?.questions) {
-      return response.status(409).json({
-        error: {
-          code: "KIT_DATA_MISSING",
-          message: "This kit does not contain generated questions.",
-        },
-      });
-    }
+        flashcards?: Array<{
+          id: string;
+          front: string;
+          back: string;
+          requirement_ids: string[];
+        }>;
+      } | null;
 
-    const question = data.questions.find(
-      (item) => item.id === questionId
-    );
+      if (!data) {
+        return response.status(409).json({
+          error: {
+            code: "KIT_DATA_MISSING",
+            message: "This kit does not contain generated data.",
+          },
+        });
+      }
 
-    if (!question) {
-      return response.status(404).json({
-        error: {
-          code: "QUESTION_NOT_FOUND",
-          message: "Question not found.",
-        },
-      });
-    }
+      /*
+       * Question update
+       */
+      if ("questionId" in parsed.data) {
+        const {
+          questionId,
+          prompt,
+          answer_outline,
+        } = parsed.data;
 
-    if (prompt !== undefined) {
-      question.prompt = prompt;
-    }
-
-    if (answer_outline !== undefined) {
-      question.answer_outline = answer_outline;
-    }
-
-    const builderState = (kit.builderState ?? {}) as {
-      editedQuestions?: Record<
-        string,
-        {
-          prompt?: string;
-          answer_outline?: string;
+        if (!data.questions) {
+          return response.status(409).json({
+            error: {
+              code: "KIT_DATA_MISSING",
+              message: "This kit does not contain generated questions.",
+            },
+          });
         }
-      >;
-    };
 
-    if (!builderState.editedQuestions) {
-      builderState.editedQuestions = {};
+        const question = data.questions.find(
+          (item) => item.id === questionId
+        );
+
+        if (!question) {
+          return response.status(404).json({
+            error: {
+              code: "QUESTION_NOT_FOUND",
+              message: "Question not found.",
+            },
+          });
+        }
+
+        if (prompt !== undefined) {
+          question.prompt = prompt;
+        }
+
+        if (answer_outline !== undefined) {
+          question.answer_outline = answer_outline;
+        }
+
+        const builderState = (kit.builderState ?? {}) as {
+          editedQuestions?: Record<
+            string,
+            {
+              prompt?: string;
+              answer_outline?: string;
+            }
+          >;
+        };
+
+        if (!builderState.editedQuestions) {
+          builderState.editedQuestions = {};
+        }
+
+        builderState.editedQuestions[questionId] = {
+          ...(builderState.editedQuestions[questionId] ?? {}),
+          ...(prompt !== undefined ? { prompt } : {}),
+          ...(answer_outline !== undefined
+            ? { answer_outline }
+            : {}),
+        };
+
+        kit.builderState = builderState;
+
+        kit.markModified("data");
+        kit.markModified("builderState");
+
+        await kit.save();
+
+        return response.json({
+          kit: {
+            _id: kit._id,
+            status: kit.status,
+            data: kit.data,
+            builderState: kit.builderState,
+          },
+        });
+      }
+
+      /*
+       * Flashcard update
+       */
+      const {
+        flashcardId,
+        front,
+        back,
+      } = parsed.data;
+
+      if (!data.flashcards) {
+        return response.status(409).json({
+          error: {
+            code: "KIT_DATA_MISSING",
+            message: "This kit does not contain generated flashcards.",
+          },
+        });
+      }
+
+      const flashcard = data.flashcards.find(
+        (item) => item.id === flashcardId
+      );
+
+      if (!flashcard) {
+        return response.status(404).json({
+          error: {
+            code: "FLASHCARD_NOT_FOUND",
+            message: "Flashcard not found.",
+          },
+        });
+      }
+
+      if (front !== undefined) {
+        flashcard.front = front;
+      }
+
+      if (back !== undefined) {
+        flashcard.back = back;
+      }
+
+      const builderState = (kit.builderState ?? {}) as {
+        editedFlashcards?: Record<
+          string,
+          {
+            front?: string;
+            back?: string;
+          }
+        >;
+      };
+
+      if (!builderState.editedFlashcards) {
+        builderState.editedFlashcards = {};
+      }
+
+      builderState.editedFlashcards[flashcardId] = {
+        ...(builderState.editedFlashcards[flashcardId] ?? {}),
+        ...(front !== undefined ? { front } : {}),
+        ...(back !== undefined ? { back } : {}),
+      };
+
+      kit.builderState = builderState;
+
+      kit.markModified("data");
+      kit.markModified("builderState");
+
+      await kit.save();
+
+      return response.json({
+        kit: {
+          _id: kit._id,
+          status: kit.status,
+          data: kit.data,
+          builderState: kit.builderState,
+        },
+      });
+    } catch (error) {
+      console.error("Builder update failed:", error);
+
+      return response.status(500).json({
+        error: {
+          code: "BUILDER_UPDATE_FAILED",
+          message: "Unable to update the interview kit.",
+        },
+      });
     }
-
-    builderState.editedQuestions[questionId] = {
-      ...(builderState.editedQuestions[questionId] ?? {}),
-      ...(prompt !== undefined ? { prompt } : {}),
-      ...(answer_outline !== undefined ? { answer_outline } : {}),
-    };
-
-    kit.builderState = builderState;
-    kit.markModified("data");
-    kit.markModified("builderState");
-
-    await kit.save();
-
-    return response.json({
-      kit: {
-        _id: kit._id,
-        status: kit.status,
-        data: kit.data,
-        builderState: kit.builderState,
-      },
-    });
-  } catch (error) {
-    console.error("Builder update failed:", error);
-
-    return response.status(500).json({
-      error: {
-        code: "BUILDER_UPDATE_FAILED",
-        message: "Unable to update the interview kit.",
-      },
-    });
   }
-});
+);
 
 kitsRouter.post(
   "/:id/generate",
@@ -212,6 +338,7 @@ kitsRouter.post(
       }
 
       kit.status = "generating";
+
       await kit.save();
 
       try {
@@ -271,6 +398,7 @@ kitsRouter.post(
         });
       } catch (error) {
         kit.status = "failed";
+
         await kit.save();
 
         console.error("Kit generation failed:", error);
@@ -291,27 +419,38 @@ kitsRouter.post(
   }
 );
 
-kitsRouter.post("/", async (request: AuthenticatedRequest, response, next) => {
-  try {
-    const {
-      name,
-      jobDescription,
-      companyUrl,
-      daysAvailable,
-    } = createKitSchema.parse(request.body);
+kitsRouter.post(
+  "/",
+  async (request: AuthenticatedRequest, response, next) => {
+    try {
+      const {
+        name,
+        jobDescription,
+        companyUrl,
+        daysAvailable,
+      } = createKitSchema.parse(request.body);
 
-    const kit = await Kit.create({
-      ownerId: request.userId,
-      name,
-      jobDescription,
-      companyUrl,
-      daysAvailable,
-    });
-    return response.status(201).json({ kit });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return response.status(400).json({ error: { code: "INVALID_KIT", message: error.issues[0]?.message ?? "Invalid kit." } });
+      const kit = await Kit.create({
+        ownerId: request.userId,
+        name,
+        jobDescription,
+        companyUrl,
+        daysAvailable,
+      });
+
+      return response.status(201).json({ kit });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return response.status(400).json({
+          error: {
+            code: "INVALID_KIT",
+            message:
+              error.issues[0]?.message ?? "Invalid kit.",
+          },
+        });
+      }
+
+      return next(error);
     }
-    return next(error);
   }
-});
+);

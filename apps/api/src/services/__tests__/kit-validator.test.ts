@@ -5,6 +5,16 @@ import {
   type KitValidationInput,
 } from "../kit-validator.js";
 
+const role: KitValidationInput["role"] = {
+  title: "Full Stack Engineer",
+  seniority: "Mid-level",
+  responsibilities: [
+    "Build React applications",
+    "Develop backend APIs",
+    "Work with databases",
+  ],
+};
+
 const requirements: KitValidationInput["requirements"] = [
   {
     id: "r1",
@@ -32,8 +42,7 @@ const questions: KitValidationInput["questions"] = [
     requirement_ids: ["r1"],
     category: "technical",
     prompt: "Explain the JavaScript event loop.",
-    answer_outline:
-      "Call stack; microtasks; macrotasks",
+    answer_outline: "Call stack; microtasks; macrotasks",
     difficulty: 2,
   },
   {
@@ -41,8 +50,7 @@ const questions: KitValidationInput["questions"] = [
     requirement_ids: ["r2"],
     category: "technical",
     prompt: "How does React reconciliation work?",
-    answer_outline:
-      "Virtual DOM; reconciliation; rendering",
+    answer_outline: "Virtual DOM; reconciliation; rendering",
     difficulty: 2,
   },
   {
@@ -54,6 +62,21 @@ const questions: KitValidationInput["questions"] = [
     answer_outline:
       "Component structure; API layer; state management; error handling",
     difficulty: 3,
+  },
+];
+
+const flashcards: KitValidationInput["flashcards"] = [
+  {
+    id: "f1",
+    front: "What is the JavaScript event loop?",
+    back: "It coordinates execution of synchronous code and asynchronous callbacks.",
+    requirement_ids: ["r1"],
+  },
+  {
+    id: "f2",
+    front: "What is React reconciliation?",
+    back: "The process React uses to determine what parts of the UI need updating.",
+    requirement_ids: ["r2"],
   },
 ];
 
@@ -75,13 +98,17 @@ const schedule: KitValidationInput["schedule"] = {
   ],
 };
 
+const baseInput: KitValidationInput = {
+  role,
+  requirements,
+  questions,
+  flashcards,
+  schedule,
+};
+
 describe("validateGeneratedKit", () => {
   it("accepts a valid generated kit", () => {
-    const result = validateGeneratedKit({
-      requirements,
-      questions,
-      schedule,
-    });
+    const result = validateGeneratedKit(baseInput);
 
     expect(result.valid).toBe(true);
     expect(result.errors).toEqual([]);
@@ -101,9 +128,8 @@ describe("validateGeneratedKit", () => {
     ];
 
     const result = validateGeneratedKit({
-      requirements,
+      ...baseInput,
       questions: invalidQuestions,
-      schedule,
     });
 
     expect(result.valid).toBe(false);
@@ -147,7 +173,7 @@ describe("validateGeneratedKit", () => {
     };
 
     const result = validateGeneratedKit({
-      requirements,
+      ...baseInput,
       questions: incompleteQuestions,
       schedule: incompleteSchedule,
     });
@@ -170,8 +196,7 @@ describe("validateGeneratedKit", () => {
     };
 
     const result = validateGeneratedKit({
-      requirements,
-      questions,
+      ...baseInput,
       schedule: invalidSchedule,
     });
 
@@ -195,8 +220,7 @@ describe("validateGeneratedKit", () => {
     };
 
     const result = validateGeneratedKit({
-      requirements,
-      questions,
+      ...baseInput,
       schedule: invalidSchedule,
     });
 
@@ -219,9 +243,8 @@ describe("validateGeneratedKit", () => {
     ];
 
     const result = validateGeneratedKit({
+      ...baseInput,
       requirements: invalidRequirements,
-      questions,
-      schedule,
     });
 
     expect(result.valid).toBe(false);
@@ -229,5 +252,65 @@ describe("validateGeneratedKit", () => {
     expect(result.errors).toContain(
       "Duplicate requirement ID: r1"
     );
+  });
+
+  it("rejects a flashcard that references an unknown requirement", () => {
+    const invalidFlashcards = [
+      ...flashcards,
+      {
+        id: "f3",
+        front: "Invalid flashcard",
+        back: "Invalid requirement reference",
+        requirement_ids: ["r999"],
+      },
+    ];
+
+    const result = validateGeneratedKit({
+      ...baseInput,
+      flashcards: invalidFlashcards,
+    });
+
+    expect(result.valid).toBe(false);
+
+    expect(result.errors).toContain(
+      "Flashcard f3 references unknown requirement: r999."
+    );
+  });
+
+  it("rejects duplicate flashcard IDs", () => {
+    const invalidFlashcards = [
+      ...flashcards,
+      {
+        id: "f1",
+        front: "Duplicate flashcard",
+        back: "Duplicate ID",
+        requirement_ids: ["r1"],
+      },
+    ];
+
+    const result = validateGeneratedKit({
+      ...baseInput,
+      flashcards: invalidFlashcards,
+    });
+
+    expect(result.valid).toBe(false);
+
+    expect(result.errors).toContain(
+      "Duplicate flashcard ID: f1"
+    );
+  });
+
+  it("rejects an invalid role", () => {
+    const invalidRole = {
+      ...role,
+      title: "",
+    };
+
+    const result = validateGeneratedKit({
+      ...baseInput,
+      role: invalidRole,
+    });
+
+    expect(result.valid).toBe(false);
   });
 });

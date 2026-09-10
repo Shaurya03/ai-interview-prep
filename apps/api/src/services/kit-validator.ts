@@ -3,8 +3,23 @@ import type { GeneratedQuestion } from "./question-generator.js";
 import type { GeneratedSchedule } from "./schedule-generator.js";
 
 export interface KitValidationInput {
+  role: {
+    title: string;
+    seniority: string;
+    responsibilities: string[];
+  };
+
   requirements: ExtractedRequirement[];
+
   questions: GeneratedQuestion[];
+
+  flashcards: {
+    id: string;
+    front: string;
+    back: string;
+    requirement_ids: string[];
+  }[];
+
   schedule: GeneratedSchedule;
 }
 
@@ -18,7 +33,39 @@ export function validateGeneratedKit(
 ): KitValidationResult {
   const errors: string[] = [];
 
-  const { requirements, questions, schedule } = input;
+  const {
+    role,
+    requirements,
+    questions,
+    flashcards,
+    schedule,
+  } = input;
+
+  // --------------------------------------------------
+  // Role
+  // --------------------------------------------------
+
+  if (!role.title.trim()) {
+    errors.push("Role must have a title.");
+  }
+
+  if (!role.seniority.trim()) {
+    errors.push("Role must have a seniority level.");
+  }
+
+  if (role.responsibilities.length === 0) {
+    errors.push(
+      "Role must contain at least one responsibility."
+    );
+  }
+
+  for (const responsibility of role.responsibilities) {
+    if (!responsibility.trim()) {
+      errors.push(
+        "Role responsibilities must not contain empty values."
+      );
+    }
+  }
 
   // --------------------------------------------------
   // Requirements
@@ -147,6 +194,57 @@ export function validateGeneratedKit(
   }
 
   // --------------------------------------------------
+  // Flashcards
+  // --------------------------------------------------
+
+  if (flashcards.length === 0) {
+    errors.push("Kit must contain at least one flashcard.");
+  }
+
+  const flashcardIds = new Set<string>();
+
+  for (const flashcard of flashcards) {
+    if (!flashcard.id.trim()) {
+      errors.push("Every flashcard must have an ID.");
+      continue;
+    }
+
+    if (flashcardIds.has(flashcard.id)) {
+      errors.push(
+        `Duplicate flashcard ID: ${flashcard.id}`
+      );
+    }
+
+    flashcardIds.add(flashcard.id);
+
+    if (!flashcard.front.trim()) {
+      errors.push(
+        `Flashcard ${flashcard.id} must have a front.`
+      );
+    }
+
+    if (!flashcard.back.trim()) {
+      errors.push(
+        `Flashcard ${flashcard.id} must have a back.`
+      );
+    }
+
+    if (flashcard.requirement_ids.length === 0) {
+      errors.push(
+        `Flashcard ${flashcard.id} must reference at least one requirement.`
+      );
+    }
+
+    for (const requirementId of flashcard.requirement_ids) {
+      if (!requirementIds.has(requirementId)) {
+        errors.push(
+          `Flashcard ${flashcard.id} references unknown requirement: ${requirementId}.`
+        );
+      }
+    }
+  }
+
+  // --------------------------------------------------
   // Schedule
   // --------------------------------------------------
 
@@ -186,7 +284,10 @@ export function validateGeneratedKit(
       );
     }
 
-    if (!Number.isFinite(day.minutes) || day.minutes < 0) {
+    if (
+      !Number.isFinite(day.minutes) ||
+      day.minutes < 0
+    ) {
       errors.push(
         `Schedule day ${day.day} has invalid minutes.`
       );
@@ -246,6 +347,10 @@ export function validateGeneratedKit(
       );
     }
   }
+
+  // --------------------------------------------------
+  // Result
+  // --------------------------------------------------
 
   return {
     valid: errors.length === 0,

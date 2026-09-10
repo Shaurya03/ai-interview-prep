@@ -103,7 +103,7 @@ export default function NewKitPage() {
               />
 
               <p className="mt-1.5 text-xs text-zinc-500">
-                Give this preparation kit a name you'll recognize later.
+                Give this preparation kit a name you&apos;ll recognize later.
               </p>
             </div>
 
@@ -126,7 +126,7 @@ export default function NewKitPage() {
               />
 
               <p className="mt-1.5 text-xs text-zinc-500">
-                We'll use this later for company research.
+                We&apos;ll use this later for company research.
               </p>
             </div>
 
@@ -173,7 +173,7 @@ export default function NewKitPage() {
               />
 
               <p className="mt-1.5 text-xs text-zinc-500">
-                Paste the complete job description. We'll extract requirements
+                Paste the complete job description. We&apos;ll extract requirements
                 from it later.
               </p>
             </div>

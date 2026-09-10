@@ -12,6 +12,12 @@ const createKitSchema = z.object({
   daysAvailable: z.number().int().min(1).max(60),
 });
 
+const updateQuestionSchema = z.object({
+  questionId: z.string().trim().min(1),
+  prompt: z.string().trim().min(1).optional(),
+  answer_outline: z.string().trim().min(1).optional(),
+});
+
 export const kitsRouter = Router();
 kitsRouter.use(requireAuth);
 
@@ -50,6 +56,131 @@ kitsRouter.get(
     }
   }
 );
+
+kitsRouter.patch("/:id/builder", async (request: AuthenticatedRequest, response) => {
+  try {
+    const userId = request.userId;
+
+    const kit = await Kit.findOne({
+      _id: request.params.id,
+      ownerId: userId,
+    });
+
+    if (!kit) {
+      return response.status(404).json({
+        error: {
+          code: "KIT_NOT_FOUND",
+          message: "Interview kit not found.",
+        },
+      });
+    }
+
+    if (kit.status !== "ready") {
+      return response.status(409).json({
+        error: {
+          code: "KIT_NOT_READY",
+          message: "Only a generated kit can be edited.",
+        },
+      });
+    }
+
+    const parsed = updateQuestionSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return response.status(400).json({
+        error: {
+          code: "INVALID_BUILDER_UPDATE",
+          message: "Invalid question update.",
+          details: parsed.error.flatten(),
+        },
+      });
+    }
+
+    const { questionId, prompt, answer_outline } = parsed.data;
+
+    const data = kit.data as {
+      questions?: Array<{
+        id: string;
+        prompt: string;
+        answer_outline: string;
+      }>;
+    } | null;
+
+    if (!data?.questions) {
+      return response.status(409).json({
+        error: {
+          code: "KIT_DATA_MISSING",
+          message: "This kit does not contain generated questions.",
+        },
+      });
+    }
+
+    const question = data.questions.find(
+      (item) => item.id === questionId
+    );
+
+    if (!question) {
+      return response.status(404).json({
+        error: {
+          code: "QUESTION_NOT_FOUND",
+          message: "Question not found.",
+        },
+      });
+    }
+
+    if (prompt !== undefined) {
+      question.prompt = prompt;
+    }
+
+    if (answer_outline !== undefined) {
+      question.answer_outline = answer_outline;
+    }
+
+    const builderState = (kit.builderState ?? {}) as {
+      editedQuestions?: Record<
+        string,
+        {
+          prompt?: string;
+          answer_outline?: string;
+        }
+      >;
+    };
+
+    if (!builderState.editedQuestions) {
+      builderState.editedQuestions = {};
+    }
+
+    builderState.editedQuestions[questionId] = {
+      ...(builderState.editedQuestions[questionId] ?? {}),
+      ...(prompt !== undefined ? { prompt } : {}),
+      ...(answer_outline !== undefined ? { answer_outline } : {}),
+    };
+
+    kit.builderState = builderState;
+    kit.markModified("data");
+    kit.markModified("builderState");
+
+    await kit.save();
+
+    return response.json({
+      kit: {
+        _id: kit._id,
+        status: kit.status,
+        data: kit.data,
+        builderState: kit.builderState,
+      },
+    });
+  } catch (error) {
+    console.error("Builder update failed:", error);
+
+    return response.status(500).json({
+      error: {
+        code: "BUILDER_UPDATE_FAILED",
+        message: "Unable to update the interview kit.",
+      },
+    });
+  }
+});
 
 kitsRouter.post(
   "/:id/generate",

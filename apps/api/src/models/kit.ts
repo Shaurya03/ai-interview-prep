@@ -1,4 +1,4 @@
-import mongoose, { type InferSchemaType, Schema, type Types } from "mongoose";
+import mongoose, { Schema } from "mongoose";
 
 const kitSchema = new Schema(
   {
@@ -13,7 +13,6 @@ const kitSchema = new Schema(
       type: String,
       required: true,
       trim: true,
-      maxlength: 120,
     },
 
     jobDescription: {
@@ -37,7 +36,6 @@ const kitSchema = new Schema(
 
     status: {
       type: String,
-      required: true,
       enum: ["draft", "generating", "ready", "failed"],
       default: "draft",
     },
@@ -46,14 +44,22 @@ const kitSchema = new Schema(
       type: Schema.Types.Mixed,
       default: null,
     },
+
+    builderState: {
+      type: Schema.Types.Mixed,
+      default: {
+        editedQuestions: {},
+        editedFlashcards: {},
+        editedCompanyBrief: {},
+        questionOrder: [],
+        deletedQuestionIds: [],
+        deletedFlashcardIds: [],
+      },
+    },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+  }
 );
 
-export type KitDocument =
-  InferSchemaType<typeof kitSchema> & {
-    ownerId: Types.ObjectId;
-  };
-
-export const Kit =
-  mongoose.models.Kit ?? mongoose.model("Kit", kitSchema);
+export const Kit = mongoose.model("Kit", kitSchema);

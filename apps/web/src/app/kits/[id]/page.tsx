@@ -15,7 +15,11 @@ type Requirement = {
 type Question = {
   id: string;
   requirement_ids: string[];
-  category: "technical" | "behavioural" | "system-design" | "company-fit";
+  category:
+  | "technical"
+  | "behavioural"
+  | "system-design"
+  | "company-fit";
   prompt: string;
   answer_outline: string;
   difficulty: number;
@@ -97,35 +101,63 @@ export default function KitDetailPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState("");
 
-  async function loadKit() {
-    try {
-      const response = await fetch(`${API_URL}/kits/${kitId}`, {
-        credentials: "include",
-      });
+  const [editingQuestionId, setEditingQuestionId] = useState<string | null>(
+    null
+  );
 
-      const result = await response.json();
+  const [editedPrompt, setEditedPrompt] = useState("");
+  const [editedAnswerOutline, setEditedAnswerOutline] = useState("");
 
-      if (!response.ok) {
-        if (response.status === 401) {
-          router.push("/login");
+  const [isSavingQuestion, setIsSavingQuestion] = useState(false);
+  const [saveError, setSaveError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadKit() {
+      try {
+        setIsLoading(true);
+        setError("");
+
+        const response = await fetch(`${API_URL}/kits/${kitId}`, {
+          credentials: "include",
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            router.push("/login");
+            return;
+          }
+
+          if (!cancelled) {
+            setError(result.error?.message ?? "Unable to load this kit.");
+          }
+
           return;
         }
 
-        setError(result.error?.message ?? "Unable to load this kit.");
-        return;
+        if (!cancelled) {
+          setKit(result.kit);
+          setError("");
+        }
+      } catch {
+        if (!cancelled) {
+          setError("Unable to connect to the server.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
       }
-
-      setKit(result.kit);
-      setError("");
-    } catch {
-      setError("Unable to connect to the server.");
-    } finally {
-      setIsLoading(false);
     }
-  }
 
-  useEffect(() => {
-    loadKit();
+    void loadKit();
+
+    return () => {
+      cancelled = true;
+    };
   }, [kitId, router]);
 
   async function generateKit() {
@@ -149,6 +181,7 @@ export default function KitDetailPage() {
         setError(
           result.error?.message ?? "Unable to generate the interview kit."
         );
+
         return;
       }
 
@@ -165,6 +198,93 @@ export default function KitDetailPage() {
       setError("Unable to connect to the server.");
     } finally {
       setIsGenerating(false);
+    }
+  }
+
+  function startEditingQuestion(question: Question) {
+    setEditingQuestionId(question.id);
+    setEditedPrompt(question.prompt);
+    setEditedAnswerOutline(question.answer_outline);
+    setSaveError("");
+  }
+
+  function cancelEditingQuestion() {
+    setEditingQuestionId(null);
+    setEditedPrompt("");
+    setEditedAnswerOutline("");
+    setSaveError("");
+  }
+
+  async function saveQuestion(questionId: string) {
+    if (!kit) {
+      return;
+    }
+
+    if (!editedPrompt.trim() || !editedAnswerOutline.trim()) {
+      setSaveError("Question and answer outline cannot be empty.");
+      return;
+    }
+
+    setIsSavingQuestion(true);
+    setSaveError("");
+
+    try {
+      const response = await fetch(`${API_URL}/kits/${kit._id}/builder`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          questionId,
+          prompt: editedPrompt.trim(),
+          answer_outline: editedAnswerOutline.trim(),
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setSaveError(
+          result.error?.message ?? "Unable to save question."
+        );
+
+        return;
+      }
+
+      setKit((currentKit) => {
+        if (!currentKit) {
+          return currentKit;
+        }
+
+        const currentData = currentKit.data;
+
+        if (!currentData?.questions) {
+          return currentKit;
+        }
+
+        return {
+          ...currentKit,
+          data: {
+            ...currentData,
+            questions: currentData.questions.map((question) =>
+              question.id === questionId
+                ? {
+                  ...question,
+                  prompt: editedPrompt.trim(),
+                  answer_outline: editedAnswerOutline.trim(),
+                }
+                : question
+            ),
+          },
+        };
+      });
+
+      cancelEditingQuestion();
+    } catch {
+      setSaveError("Unable to connect to the server.");
+    } finally {
+      setIsSavingQuestion(false);
     }
   }
 
@@ -516,46 +636,137 @@ export default function KitDetailPage() {
               </div>
 
               <div className="mt-6 space-y-4">
-                {data.questions.map((question, index) => (
-                  <article
-                    key={question.id}
-                    className="rounded-xl border border-zinc-200 p-5"
-                  >
-                    <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-                      <div className="flex gap-3">
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-xs font-semibold text-white">
-                          {index + 1}
-                        </span>
+                {data.questions.map((question, index) => {
+                  const isEditing =
+                    editingQuestionId === question.id;
 
+                  return (
+                    <article
+                      key={question.id}
+                      className="rounded-xl border border-zinc-200 p-5"
+                    >
+                      {isEditing ? (
                         <div>
-                          <p className="font-medium leading-6 text-zinc-900">
-                            {question.prompt}
-                          </p>
+                          <div className="mb-4 flex items-center justify-between gap-3">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                              Question {index + 1}
+                            </span>
 
-                          <div className="mt-2 flex flex-wrap gap-2">
                             <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium capitalize text-zinc-600">
                               {question.category}
                             </span>
+                          </div>
 
-                            <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600">
-                              Difficulty {question.difficulty}/3
+                          <label className="block">
+                            <span className="text-sm font-medium text-zinc-700">
+                              Question
                             </span>
+
+                            <textarea
+                              value={editedPrompt}
+                              onChange={(event) =>
+                                setEditedPrompt(event.target.value)
+                              }
+                              rows={4}
+                              className="mt-2 w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-sm leading-6 outline-none transition focus:border-zinc-950 focus:ring-1 focus:ring-zinc-950"
+                            />
+                          </label>
+
+                          <label className="mt-4 block">
+                            <span className="text-sm font-medium text-zinc-700">
+                              Answer outline
+                            </span>
+
+                            <textarea
+                              value={editedAnswerOutline}
+                              onChange={(event) =>
+                                setEditedAnswerOutline(event.target.value)
+                              }
+                              rows={5}
+                              className="mt-2 w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-sm leading-6 outline-none transition focus:border-zinc-950 focus:ring-1 focus:ring-zinc-950"
+                            />
+                          </label>
+
+                          {saveError && (
+                            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+                              {saveError}
+                            </div>
+                          )}
+
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                saveQuestion(question.id)
+                              }
+                              disabled={isSavingQuestion}
+                              className="rounded-lg bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {isSavingQuestion
+                                ? "Saving..."
+                                : "Save changes"}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={cancelEditingQuestion}
+                              disabled={isSavingQuestion}
+                              className="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Cancel
+                            </button>
                           </div>
                         </div>
-                      </div>
-                    </div>
+                      ) : (
+                        <div>
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex min-w-0 gap-3">
+                              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-xs font-semibold text-white">
+                                {index + 1}
+                              </span>
 
-                    <div className="mt-4 rounded-xl bg-zinc-50 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                        Answer outline
-                      </p>
+                              <div className="min-w-0">
+                                <p className="font-medium leading-6 text-zinc-900">
+                                  {question.prompt}
+                                </p>
 
-                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-700">
-                        {question.answer_outline}
-                      </p>
-                    </div>
-                  </article>
-                ))}
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium capitalize text-zinc-600">
+                                    {question.category}
+                                  </span>
+
+                                  <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600">
+                                    Difficulty {question.difficulty}/3
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                startEditingQuestion(question)
+                              }
+                              className="shrink-0 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50"
+                            >
+                              Edit
+                            </button>
+                          </div>
+
+                          <div className="mt-4 rounded-xl bg-zinc-50 p-4">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                              Answer outline
+                            </p>
+
+                            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-700">
+                              {question.answer_outline}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </article>
+                  );
+                })}
               </div>
             </section>
 
@@ -618,7 +829,9 @@ export default function KitDetailPage() {
             <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
               <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
                 <div>
-                  <h2 className="text-xl font-semibold">Flashcards</h2>
+                  <h2 className="text-xl font-semibold">
+                    Flashcards
+                  </h2>
 
                   <p className="mt-1 text-sm text-zinc-500">
                     Quick revision material based on the job requirements.

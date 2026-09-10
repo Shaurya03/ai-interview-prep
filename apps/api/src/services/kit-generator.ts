@@ -3,6 +3,7 @@ import { generateQuestionPipeline } from "./question-pipeline.js";
 import { extractRequirements } from "./requirement-extractor.js";
 import { researchCompany } from "./researcher.js";
 import { generateSchedule } from "./schedule-generator.js";
+import { validateGeneratedKit } from "./kit-validator.js";
 
 export interface GeneratedKitDraft {
   requirements: Awaited<ReturnType<typeof extractRequirements>>;
@@ -11,7 +12,7 @@ export interface GeneratedKitDraft {
   questions: Awaited<
     ReturnType<typeof generateQuestionPipeline>
   >["questions"];
-  schedule: ReturnType<typeof generateSchedule>;
+  schedule: Awaited<ReturnType<typeof generateSchedule>>;
   coverage: {
     uncoveredRequirementIds: string[];
     passes: number;
@@ -39,26 +40,16 @@ export async function generateKitDraft(
   const requirements = await extractRequirements(jobDescription);
 
   // Step 2: Research the company website.
-  //
-  // The researcher handles URL validation, crawling, cleaning,
-  // ranking useful links, and recording research gaps.
   const research = await researchCompany(companyUrl);
 
-  // Step 3: Generate a company brief from the retrieved pages.
-  //
-  // The brief generator only receives retrieved research rather
-  // than arbitrary model-generated web content.
+  // Step 3: Generate a company brief from the retrieved research.
   const companyBrief = await generateCompanyBrief(
     companyUrl,
     research
   );
 
-  // Step 4: Generate questions using both the requirements
-  // and the company research context.
-  //
-  // This allows company-specific information to influence
-  // question generation while keeping the requirements grounded
-  // in the original job description.
+  // Step 4: Generate questions using the requirements and
+  // company-specific context.
   const questionResult = await generateQuestionPipeline(
     requirements,
     {
@@ -66,15 +57,26 @@ export async function generateKitDraft(
     }
   );
 
-  // Step 5: Build the preparation schedule deterministically.
-  //
-  // No LLM is used here. The schedule generator uses the requested
-  // number of days plus question priority and difficulty.
+  // Step 5: Generate a deterministic preparation schedule.
   const schedule = generateSchedule(
     requirements,
     questionResult.questions,
     daysAvailable
   );
+
+  // Step 6: Validate the complete generated kit before it can
+  // be persisted or marked as ready.
+  const validation = validateGeneratedKit({
+    requirements,
+    questions: questionResult.questions,
+    schedule,
+  });
+
+  if (!validation.valid) {
+    throw new Error(
+      `Generated kit validation failed: ${validation.errors.join(" ")}`
+    );
+  }
 
   return {
     requirements,

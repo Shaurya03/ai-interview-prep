@@ -1,11 +1,17 @@
-import { describe, expect, it, vi } from "vitest";
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import { generateKitDraft } from "../kit-generator.js";
-import type { GeneratedSchedule } from "../schedule-generator.js";
-import type { ExtractedRequirement } from "../requirement-extractor.js";
-import type { GeneratedQuestion } from "../question-generator.js";
-import type { ResearchResult } from "../researcher.js";
 import type { CompanyBrief } from "../company-brief-generator.js";
+import type { GeneratedQuestion } from "../question-generator.js";
+import type { ExtractedRequirement } from "../requirement-extractor.js";
+import type { GeneratedSchedule } from "../schedule-generator.js";
+import type { ResearchResult } from "../researcher.js";
 
 vi.mock("../requirement-extractor.js", () => ({
   extractRequirements: vi.fn(),
@@ -27,15 +33,24 @@ vi.mock("../schedule-generator.js", () => ({
   generateSchedule: vi.fn(),
 }));
 
+vi.mock("../kit-validator.js", () => ({
+  validateGeneratedKit: vi.fn(),
+}));
+
 import { extractRequirements } from "../requirement-extractor.js";
 import { researchCompany } from "../researcher.js";
 import { generateCompanyBrief } from "../company-brief-generator.js";
 import { generateQuestionPipeline } from "../question-pipeline.js";
 import { generateSchedule } from "../schedule-generator.js";
+import { validateGeneratedKit } from "../kit-validator.js";
 
-const mockedExtractRequirements = vi.mocked(extractRequirements);
+const mockedExtractRequirements = vi.mocked(
+  extractRequirements
+);
 
-const mockedResearchCompany = vi.mocked(researchCompany);
+const mockedResearchCompany = vi.mocked(
+  researchCompany
+);
 
 const mockedGenerateCompanyBrief = vi.mocked(
   generateCompanyBrief
@@ -47,6 +62,10 @@ const mockedGenerateQuestionPipeline = vi.mocked(
 
 const mockedGenerateSchedule = vi.mocked(
   generateSchedule
+);
+
+const mockedValidateGeneratedKit = vi.mocked(
+  validateGeneratedKit
 );
 
 const requirements: ExtractedRequirement[] = [
@@ -147,8 +166,12 @@ const companyUrl = "https://example.com/";
 const daysAvailable = 5;
 
 describe("generateKitDraft", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it(
-    "orchestrates requirements, research, company brief, questions, and schedule",
+    "orchestrates requirements, research, company brief, questions, schedule, and validation",
     async () => {
       mockedExtractRequirements.mockResolvedValue(
         requirements
@@ -171,6 +194,11 @@ describe("generateKitDraft", () => {
       mockedGenerateSchedule.mockReturnValue(
         schedule
       );
+
+      mockedValidateGeneratedKit.mockReturnValue({
+        valid: true,
+        errors: [],
+      });
 
       const result = await generateKitDraft(
         jobDescription,
@@ -201,27 +229,33 @@ describe("generateKitDraft", () => {
         passes: 1,
       });
 
-      expect(mockedExtractRequirements).toHaveBeenCalledTimes(
-        1
-      );
+      expect(
+        mockedExtractRequirements
+      ).toHaveBeenCalledTimes(1);
 
-      expect(mockedExtractRequirements).toHaveBeenCalledWith(
+      expect(
+        mockedExtractRequirements
+      ).toHaveBeenCalledWith(
         jobDescription
       );
 
-      expect(mockedResearchCompany).toHaveBeenCalledTimes(
-        1
-      );
+      expect(
+        mockedResearchCompany
+      ).toHaveBeenCalledTimes(1);
 
-      expect(mockedResearchCompany).toHaveBeenCalledWith(
+      expect(
+        mockedResearchCompany
+      ).toHaveBeenCalledWith(
         companyUrl
       );
 
-      expect(mockedGenerateCompanyBrief).toHaveBeenCalledTimes(
-        1
-      );
+      expect(
+        mockedGenerateCompanyBrief
+      ).toHaveBeenCalledTimes(1);
 
-      expect(mockedGenerateCompanyBrief).toHaveBeenCalledWith(
+      expect(
+        mockedGenerateCompanyBrief
+      ).toHaveBeenCalledWith(
         companyUrl,
         research
       );
@@ -239,15 +273,29 @@ describe("generateKitDraft", () => {
         }
       );
 
-      expect(mockedGenerateSchedule).toHaveBeenCalledTimes(
-        1
-      );
+      expect(
+        mockedGenerateSchedule
+      ).toHaveBeenCalledTimes(1);
 
-      expect(mockedGenerateSchedule).toHaveBeenCalledWith(
+      expect(
+        mockedGenerateSchedule
+      ).toHaveBeenCalledWith(
         requirements,
         questions,
         daysAvailable
       );
+
+      expect(
+        mockedValidateGeneratedKit
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        mockedValidateGeneratedKit
+      ).toHaveBeenCalledWith({
+        requirements,
+        questions,
+        schedule,
+      });
     }
   );
 
@@ -281,6 +329,10 @@ describe("generateKitDraft", () => {
     expect(
       mockedGenerateSchedule
     ).not.toHaveBeenCalled();
+
+    expect(
+      mockedValidateGeneratedKit
+    ).not.toHaveBeenCalled();
   });
 
   it("rejects an empty company URL", async () => {
@@ -312,6 +364,10 @@ describe("generateKitDraft", () => {
 
     expect(
       mockedGenerateSchedule
+    ).not.toHaveBeenCalled();
+
+    expect(
+      mockedValidateGeneratedKit
     ).not.toHaveBeenCalled();
   });
 
@@ -345,45 +401,111 @@ describe("generateKitDraft", () => {
     expect(
       mockedGenerateSchedule
     ).not.toHaveBeenCalled();
-  });
-
-  it("preserves the number of passes used by the question pipeline", async () => {
-    mockedExtractRequirements.mockResolvedValue(
-      requirements
-    );
-
-    mockedResearchCompany.mockResolvedValue(
-      research
-    );
-
-    mockedGenerateCompanyBrief.mockResolvedValue(
-      companyBrief
-    );
-
-    mockedGenerateQuestionPipeline.mockResolvedValue({
-      questions,
-      uncoveredRequirementIds: [],
-      passes: 2,
-    });
-
-    mockedGenerateSchedule.mockReturnValue(
-      schedule
-    );
-
-    const result = await generateKitDraft(
-      jobDescription,
-      companyUrl,
-      daysAvailable
-    );
-
-    expect(result.coverage.passes).toBe(2);
 
     expect(
-      result.coverage.uncoveredRequirementIds
-    ).toEqual([]);
-
-    expect(result.schedule).toEqual(
-      schedule
-    );
+      mockedValidateGeneratedKit
+    ).not.toHaveBeenCalled();
   });
+
+  it(
+    "preserves the number of passes used by the question pipeline",
+    async () => {
+      mockedExtractRequirements.mockResolvedValue(
+        requirements
+      );
+
+      mockedResearchCompany.mockResolvedValue(
+        research
+      );
+
+      mockedGenerateCompanyBrief.mockResolvedValue(
+        companyBrief
+      );
+
+      mockedGenerateQuestionPipeline.mockResolvedValue({
+        questions,
+        uncoveredRequirementIds: [],
+        passes: 2,
+      });
+
+      mockedGenerateSchedule.mockReturnValue(
+        schedule
+      );
+
+      mockedValidateGeneratedKit.mockReturnValue({
+        valid: true,
+        errors: [],
+      });
+
+      const result = await generateKitDraft(
+        jobDescription,
+        companyUrl,
+        daysAvailable
+      );
+
+      expect(
+        result.coverage.passes
+      ).toBe(2);
+
+      expect(
+        result.coverage.uncoveredRequirementIds
+      ).toEqual([]);
+
+      expect(result.schedule).toEqual(
+        schedule
+      );
+    }
+  );
+
+  it(
+    "rejects the generated kit when final validation fails",
+    async () => {
+      mockedExtractRequirements.mockResolvedValue(
+        requirements
+      );
+
+      mockedResearchCompany.mockResolvedValue(
+        research
+      );
+
+      mockedGenerateCompanyBrief.mockResolvedValue(
+        companyBrief
+      );
+
+      mockedGenerateQuestionPipeline.mockResolvedValue({
+        questions,
+        uncoveredRequirementIds: [],
+        passes: 1,
+      });
+
+      mockedGenerateSchedule.mockReturnValue(
+        schedule
+      );
+
+      mockedValidateGeneratedKit.mockReturnValue({
+        valid: false,
+        errors: [
+          "Must-have requirement r2 is not covered by any question.",
+        ],
+      });
+
+      await expect(
+        generateKitDraft(
+          jobDescription,
+          companyUrl,
+          daysAvailable
+        )
+      ).rejects.toThrow(
+        "Generated kit validation failed: Must-have requirement r2 is not covered by any question."
+      );
+
+      expect(
+        mockedValidateGeneratedKit
+      ).toHaveBeenCalledWith({
+        requirements,
+        questions,
+        schedule,
+      });
+    }
+  );
 });

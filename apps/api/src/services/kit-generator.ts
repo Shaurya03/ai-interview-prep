@@ -2,6 +2,7 @@ import { generateCompanyBrief } from "./company-brief-generator.js";
 import { generateQuestionPipeline } from "./question-pipeline.js";
 import { extractRequirements } from "./requirement-extractor.js";
 import { researchCompany } from "./researcher.js";
+import { generateSchedule } from "./schedule-generator.js";
 
 export interface GeneratedKitDraft {
   requirements: Awaited<ReturnType<typeof extractRequirements>>;
@@ -10,6 +11,7 @@ export interface GeneratedKitDraft {
   questions: Awaited<
     ReturnType<typeof generateQuestionPipeline>
   >["questions"];
+  schedule: ReturnType<typeof generateSchedule>;
   coverage: {
     uncoveredRequirementIds: string[];
     passes: number;
@@ -18,7 +20,8 @@ export interface GeneratedKitDraft {
 
 export async function generateKitDraft(
   jobDescription: string,
-  companyUrl: string
+  companyUrl: string,
+  daysAvailable: number
 ): Promise<GeneratedKitDraft> {
   if (!jobDescription.trim()) {
     throw new Error("Job description cannot be empty.");
@@ -26,6 +29,10 @@ export async function generateKitDraft(
 
   if (!companyUrl.trim()) {
     throw new Error("Company URL cannot be empty.");
+  }
+
+  if (!Number.isInteger(daysAvailable) || daysAvailable < 1) {
+    throw new Error("daysAvailable must be a positive integer.");
   }
 
   // Step 1: Extract explicit requirements from the job description.
@@ -59,11 +66,22 @@ export async function generateKitDraft(
     }
   );
 
+  // Step 5: Build the preparation schedule deterministically.
+  //
+  // No LLM is used here. The schedule generator uses the requested
+  // number of days plus question priority and difficulty.
+  const schedule = generateSchedule(
+    requirements,
+    questionResult.questions,
+    daysAvailable
+  );
+
   return {
     requirements,
     research,
     companyBrief,
     questions: questionResult.questions,
+    schedule,
     coverage: {
       uncoveredRequirementIds:
         questionResult.uncoveredRequirementIds,

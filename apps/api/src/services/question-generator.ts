@@ -15,9 +15,29 @@ const generatedQuestionSchema = z.object({
   difficulty: z.number().int().min(1).max(3),
 });
 
-const questionGenerationResponseSchema = z.object({
-  questions: z.array(generatedQuestionSchema).min(1),
+const rawGeneratedQuestionSchema = z.object({
+  requirement_ids: z.array(z.string()).min(1),
+  category: z.enum([
+    "technical",
+    "behavioural",
+    "system-design",
+    "company-fit",
+  ]),
+  prompt: z.string().trim().min(1).optional(),
+  question: z.string().trim().min(1).optional(),
+  answer_outline: z.union([
+    z.string().trim().min(1),
+    z.array(z.string().trim().min(1)).min(1),
+  ]),
+  difficulty: z.number().int().min(1).max(3),
 });
+
+const questionGenerationResponseSchema = z.union([
+  z.object({
+    questions: z.array(rawGeneratedQuestionSchema).min(1),
+  }),
+  z.array(rawGeneratedQuestionSchema).min(1),
+]);
 
 export interface GeneratedQuestion {
   id: string;
@@ -37,6 +57,7 @@ export interface QuestionGenerationContext {
     summary: string;
     what_they_do: string;
   };
+
   researchPages?: Array<{
     url: string;
     title: string;
@@ -57,9 +78,6 @@ export async function generateQuestions(
    *
    * This is only a target. The model should use judgment rather than
    * creating low-quality questions just to hit a number.
-   *
-   * Rich job descriptions can therefore produce around 20–40 questions,
-   * while thinner job descriptions naturally produce smaller kits.
    */
   const targetQuestionCount = Math.min(
     40,
@@ -177,10 +195,14 @@ rely on the supplied requirements instead.
 
 ANSWER OUTLINE
 
-The answer_outline should be concise preparation guidance, not a full
-answer or essay.
+The answer_outline should contain roughly 3–6 important points a strong
+candidate should discuss.
 
-Include roughly 3–6 important points a strong candidate should discuss.
+It may be returned as either:
+- a single concise string
+- an array of concise strings
+
+We will normalize either format into one string.
 
 DIFFICULTY
 
@@ -200,7 +222,18 @@ QUALITY RULES
 - Do not assume that every requirement needs exactly one question.
 - Do not assume that every nice-to-have requirement must be covered.
 
+OUTPUT FORMAT
+
 Return JSON only.
+
+Each question should contain:
+- requirement_ids
+- category
+- prompt
+- answer_outline
+- difficulty
+
+Use "prompt" for the question text.
 
 REQUIREMENTS
 
@@ -210,7 +243,65 @@ ${companyContext}
 `;
 
   const raw = await generateJson<unknown>(prompt);
+
   const parsed = questionGenerationResponseSchema.parse(raw);
+
+  /*
+   * Gemini may return either:
+   *
+   * {
+   *   "questions": [...]
+   * }
+   *
+   * or:
+   *
+   * [...]
+   *
+   * Normalize both formats into one array.
+   */
+  const rawQuestions = Array.isArray(parsed)
+    ? parsed
+    : parsed.questions;
+
+  /*
+   * Normalize small variations in the model's output.
+   *
+   * Some model responses use "question" instead of "prompt".
+   * Some return answer_outline as an array of points.
+   *
+   * These are representation differences, not content failures,
+   * so normalize them before applying our strict final schema.
+   */
+  const normalizedQuestions = rawQuestions.map((question) => {
+    const prompt = question.prompt ?? question.question;
+
+    if (!prompt) {
+      throw new Error(
+        "Generated question is missing both 'prompt' and 'question'."
+      );
+    }
+
+    const answerOutline = Array.isArray(question.answer_outline)
+      ? question.answer_outline.join(" ")
+      : question.answer_outline;
+
+    return {
+      requirement_ids: question.requirement_ids,
+      category: question.category,
+      prompt,
+      answer_outline: answerOutline,
+      difficulty: question.difficulty,
+    };
+  });
+
+  /*
+   * Validate the normalized representation.
+   *
+   * This gives the rest of the application one predictable shape.
+   */
+  const questions = normalizedQuestions.map((question) =>
+    generatedQuestionSchema.parse(question)
+  );
 
   const validRequirementIds = new Set(
     requirements.map((requirement) => requirement.id)
@@ -220,7 +311,7 @@ ${companyContext}
    * Deterministically validate requirement references.
    * Coverage itself is intentionally handled by coverage-checker.ts.
    */
-  for (const question of parsed.questions) {
+  for (const question of questions) {
     for (const requirementId of question.requirement_ids) {
       if (!validRequirementIds.has(requirementId)) {
         throw new Error(
@@ -235,7 +326,7 @@ ${companyContext}
    */
   const seenPrompts = new Set<string>();
 
-  const uniqueQuestions = parsed.questions.filter((question) => {
+  const uniqueQuestions = questions.filter((question) => {
     const normalizedPrompt = question.prompt
       .trim()
       .toLowerCase()

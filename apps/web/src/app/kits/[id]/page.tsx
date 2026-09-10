@@ -122,6 +122,8 @@ export default function KitDetailPage() {
   const [questionOrderError, setQuestionOrderError] = useState("");
   const [draggedQuestionId, setDraggedQuestionId] = useState<string | null>(null);
   const [dragOverQuestionId, setDragOverQuestionId] = useState<string | null>(null);
+  const [isSavingCategoryId, setIsSavingCategoryId] = useState<string | null>(null);
+  const [categorySaveError, setCategorySaveError] = useState("");
 
   const [editingFlashcardId, setEditingFlashcardId] = useState<string | null>(
     null
@@ -317,6 +319,57 @@ export default function KitDetailPage() {
       setSaveError("Unable to connect to the server.");
     } finally {
       setIsSavingQuestion(false);
+    }
+  }
+
+  async function saveQuestionCategory(
+    questionId: string,
+    category: Question["category"]
+  ) {
+    if (!kit) {
+      return;
+    }
+
+    setIsSavingCategoryId(questionId);
+    setCategorySaveError("");
+
+    try {
+      const response = await fetch(`${API_URL}/kits/${kit._id}/builder`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          questionId,
+          category,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setCategorySaveError(
+          result.error?.message ?? "Unable to save question category."
+        );
+        return;
+      }
+
+      if (result.kit?.data) {
+        setKit((currentKit) =>
+          currentKit
+            ? {
+              ...currentKit,
+              data: result.kit.data,
+              builderState: result.kit.builderState ?? currentKit.builderState,
+            }
+            : currentKit
+        );
+      }
+    } catch {
+      setCategorySaveError("Unable to connect to the server.");
+    } finally {
+      setIsSavingCategoryId(null);
     }
   }
 
@@ -1172,9 +1225,9 @@ export default function KitDetailPage() {
                       }
                       onDragEnd={handleQuestionDragEnd}
                       className={`rounded-xl border p-5 transition ${dragOverQuestionId === question.id &&
-                          draggedQuestionId !== question.id
-                          ? "border-zinc-950 bg-zinc-50 shadow-sm"
-                          : "border-zinc-200"
+                        draggedQuestionId !== question.id
+                        ? "border-zinc-950 bg-zinc-50 shadow-sm"
+                        : "border-zinc-200"
                         } ${draggedQuestionId === question.id
                           ? "cursor-grabbing opacity-50"
                           : !editingQuestionId
@@ -1268,9 +1321,23 @@ export default function KitDetailPage() {
                                 </p>
 
                                 <div className="mt-2 flex flex-wrap gap-2">
-                                  <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium capitalize text-zinc-600">
-                                    {question.category}
-                                  </span>
+                                  <select
+                                    value={question.category}
+                                    onChange={(event) =>
+                                      void saveQuestionCategory(
+                                        question.id,
+                                        event.target.value as Question["category"]
+                                      )
+                                    }
+                                    disabled={isSavingCategoryId === question.id}
+                                    aria-label={`Category for question ${index + 1}`}
+                                    className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 outline-none transition focus:border-zinc-950 focus:ring-1 focus:ring-zinc-950 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    <option value="technical">Technical</option>
+                                    <option value="behavioural">Behavioural</option>
+                                    <option value="system-design">System Design</option>
+                                    <option value="company-fit">Company Fit</option>
+                                  </select>
 
                                   <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600">
                                     Difficulty {question.difficulty}/3
@@ -1336,6 +1403,12 @@ export default function KitDetailPage() {
               {questionOrderError && (
                 <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
                   {questionOrderError}
+                </div>
+              )}
+
+              {categorySaveError && (
+                <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+                  {categorySaveError}
                 </div>
               )}
             </section>

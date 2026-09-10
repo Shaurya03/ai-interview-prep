@@ -16,26 +16,43 @@ const createKitSchema = z.object({
 });
 
 const updateBuilderSchema = z.union([
+  // Question category update MUST come before
+  // the generic question update.
+  z.object({
+    questionId: z.string().trim().min(1),
+    category: z.enum([
+      "technical",
+      "behavioural",
+      "system-design",
+      "company-fit",
+    ]),
+  }),
+
+  // Question text / answer update
   z.object({
     questionId: z.string().trim().min(1),
     prompt: z.string().trim().min(1).optional(),
     answer_outline: z.string().trim().min(1).optional(),
   }),
 
+  // Delete question
   z.object({
     deleteQuestionId: z.string().trim().min(1),
   }),
 
+  // Reorder questions
   z.object({
     questionOrder: z.array(z.string().trim().min(1)).min(1),
   }),
 
+  // Flashcard update
   z.object({
     flashcardId: z.string().trim().min(1),
     front: z.string().trim().min(1).optional(),
     back: z.string().trim().min(1).optional(),
   }),
 
+  // Company brief update
   z.object({
     companyBrief: z.object({
       summary: z.string().trim().min(1),
@@ -250,6 +267,7 @@ kitsRouter.patch(
             {
               prompt?: string;
               answer_outline?: string;
+              category?: "technical" | "behavioural" | "system-design" | "company-fit";
             }
           >;
           editedFlashcards?: Record<
@@ -290,7 +308,10 @@ kitsRouter.patch(
       /*
        * Question update
        */
-      if ("questionId" in parsed.data) {
+      if (
+        "questionId" in parsed.data &&
+        ("prompt" in parsed.data || "answer_outline" in parsed.data)
+      ) {
         const {
           questionId,
           prompt,
@@ -333,6 +354,7 @@ kitsRouter.patch(
             {
               prompt?: string;
               answer_outline?: string;
+              category?: "technical" | "behavioural" | "system-design" | "company-fit";
             }
           >;
           editedFlashcards?: Record<
@@ -360,6 +382,85 @@ kitsRouter.patch(
             : {}),
         };
 
+        kit.builderState = builderState;
+
+        kit.markModified("data");
+        kit.markModified("builderState");
+
+        await kit.save();
+
+        return response.json({
+          kit: {
+            _id: kit._id,
+            status: kit.status,
+            data: kit.data,
+            builderState: kit.builderState,
+          },
+        });
+      }
+
+      /*
+       * Question category update
+       */
+      if ("questionId" in parsed.data && "category" in parsed.data) {
+        const { questionId, category } = parsed.data;
+
+        if (!data.questions) {
+          return response.status(409).json({
+            error: {
+              code: "KIT_DATA_MISSING",
+              message: "This kit does not contain generated questions.",
+            },
+          });
+        }
+
+        const question = data.questions.find(
+          (item) => item.id === questionId
+        );
+
+        if (!question) {
+          return response.status(404).json({
+            error: {
+              code: "QUESTION_NOT_FOUND",
+              message: "Question not found.",
+            },
+          });
+        }
+
+        question.category = category;
+
+        const builderState = (kit.builderState ?? {}) as {
+          editedQuestions?: Record<
+            string,
+            {
+              prompt?: string;
+              answer_outline?: string;
+              category?: "technical" | "behavioural" | "system-design" | "company-fit";
+            }
+          >;
+          editedFlashcards?: Record<
+            string,
+            {
+              front?: string;
+              back?: string;
+            }
+          >;
+          editedCompanyBrief?: {
+            summary?: string;
+            what_they_do?: string;
+          };
+        };
+
+        if (!builderState.editedQuestions) {
+          builderState.editedQuestions = {};
+        }
+
+        builderState.editedQuestions[questionId] = {
+          ...(builderState.editedQuestions[questionId] ?? {}),
+          category,
+        };
+
+        kit.data = data;
         kit.builderState = builderState;
 
         kit.markModified("data");
@@ -424,6 +525,7 @@ kitsRouter.patch(
             {
               prompt?: string;
               answer_outline?: string;
+              category?: "technical" | "behavioural" | "system-design" | "company-fit";
             }
           >;
           editedFlashcards?: Record<
@@ -541,6 +643,7 @@ kitsRouter.patch(
             {
               prompt?: string;
               answer_outline?: string;
+              category?: "technical" | "behavioural" | "system-design" | "company-fit";
             }
           >;
           editedFlashcards?: Record<
@@ -586,6 +689,15 @@ kitsRouter.patch(
       /*
        * Company brief update
        */
+      if (!("companyBrief" in parsed.data)) {
+        return response.status(400).json({
+          error: {
+            code: "INVALID_BUILDER_UPDATE",
+            message: "Invalid company brief update.",
+          },
+        });
+      }
+
       const { companyBrief } = parsed.data;
 
       if (!data.company_brief) {

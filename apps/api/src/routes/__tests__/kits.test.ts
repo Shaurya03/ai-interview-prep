@@ -48,9 +48,11 @@ const mockedKit = vi.mocked(Kit);
 
 const generatedDraft = {
   role: {
-    title: "Frontend Engineer",
+    title: "Software Engineer",
     seniority: "Mid-level",
-    responsibilities: ["Build React applications."],
+    company: "Test Company",
+    location: "Remote",
+    responsibilities: ["Build software"],
   },
 
   requirements: [
@@ -144,7 +146,6 @@ describe("POST /kits/:id/generate", () => {
     mockKit.data = null;
 
     mockSave.mockResolvedValue(mockKit);
-
     mockGenerateKitDraft.mockResolvedValue(generatedDraft);
   });
 
@@ -169,24 +170,36 @@ describe("POST /kits/:id/generate", () => {
     );
 
     expect(mockKit.status).toBe("ready");
+
     expect(mockKit.data).toMatchObject({
       source: {
+        company: "Test Company",
         company_url: "https://example.com",
-        role: "Frontend Engineer",
+        role: "Software Engineer",
+        location: "Remote",
         jd_chars: "Build React applications.".length,
         pages_used: ["https://example.com"],
       },
+
       company_brief: {
         summary: "Example company.",
         what_they_do: "Build software.",
+        sources: ["https://example.com"],
       },
+
       role: {
-        title: "Frontend Engineer",
+        title: "Software Engineer",
         seniority: "Mid-level",
+        responsibilities: ["Build software"],
+        requirements: generatedDraft.requirements,
       },
+
       questions: generatedDraft.questions,
+
       flashcards: generatedDraft.flashcards,
+
       schedule: generatedDraft.schedule,
+
       coverage: {
         uncovered_requirement_ids: [],
         passes: 1,

@@ -81,6 +81,8 @@ const mockedValidateGeneratedKit = vi.mocked(
 );
 
 const role: ExtractedRole = {
+  company: "NovaTech",
+  location: "Remote",
   title: "Software Engineer",
   seniority: "Mid-level",
   responsibilities: [

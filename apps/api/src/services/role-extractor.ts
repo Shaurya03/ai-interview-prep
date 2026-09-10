@@ -5,12 +5,16 @@ import { generateJson } from "./llm.js";
 const roleResponseSchema = z.object({
   title: z.string().trim().min(1),
   seniority: z.string().trim().min(1),
+  company: z.string().trim().min(1),
+  location: z.string().trim().min(1),
   responsibilities: z.array(z.string().trim().min(1)),
 });
 
 export interface ExtractedRole {
   title: string;
   seniority: string;
+  company: string;
+  location: string;
   responsibilities: string[];
 }
 
@@ -29,6 +33,8 @@ Extract ONLY information that is explicitly supported by the supplied job descri
 Return:
 - title: the job title
 - seniority: the stated seniority level. If the job description does not explicitly state seniority, use "Not specified".
+- company: the company name if explicitly stated. If it is not stated, use "Not specified".
+- location: the job location if explicitly stated. If it is not stated, use "Not specified".
 - responsibilities: the main responsibilities explicitly described in the job description
 
 Rules:

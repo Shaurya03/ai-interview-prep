@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { kitSchema } from "@ai-interview-prep/shared";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/require-auth.js";
 import { Kit } from "../models/kit.js";
 import { generateKitDraft } from "../services/kit-generator.js";
@@ -7,7 +8,7 @@ import { generateKitDraft } from "../services/kit-generator.js";
 const createKitSchema = z.object({
   name: z.string().trim().min(1).max(120),
   jobDescription: z.string().trim().min(1),
-  companyUrl: z.string().trim().url(),
+  companyUrl: z.url(),
   daysAvailable: z.number().int().min(1).max(60),
 });
 
@@ -91,10 +92,10 @@ kitsRouter.post(
 
         const data = {
           source: {
-            company: "",
+            company: draft.role.company,
             company_url: kit.companyUrl,
             role: draft.role.title,
-            location: "",
+            location: draft.role.location,
             jd_chars: kit.jobDescription.length,
             researched_at: new Date().toISOString(),
             pages_used: draft.research.pagesUsed,
@@ -126,7 +127,9 @@ kitsRouter.post(
           },
         };
 
-        kit.data = data;
+        const validatedKit = kitSchema.parse(data);
+
+        kit.data = validatedKit;
         kit.status = "ready";
 
         await kit.save();

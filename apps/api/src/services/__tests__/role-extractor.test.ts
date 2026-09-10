@@ -13,6 +13,8 @@ const mockedGenerateJson = vi.mocked(generateJson);
 describe("extractRole", () => {
   it("extracts title, seniority, and responsibilities", async () => {
     mockedGenerateJson.mockResolvedValue({
+      company: "NovaTech",
+      location: "Remote",
       title: "Full Stack Software Engineer Intern",
       seniority: "Intern",
       responsibilities: [
@@ -34,6 +36,8 @@ describe("extractRole", () => {
     const result = await extractRole(jobDescription);
 
     expect(result).toEqual({
+      company: "NovaTech",
+      location: "Remote",
       title: "Full Stack Software Engineer Intern",
       seniority: "Intern",
       responsibilities: [
@@ -48,6 +52,8 @@ describe("extractRole", () => {
 
   it("uses Not specified when seniority is not stated", async () => {
     mockedGenerateJson.mockResolvedValue({
+      company: "NovaTech",
+      location: "Remote",
       title: "Software Engineer",
       seniority: "Not specified",
       responsibilities: ["Build web applications"],

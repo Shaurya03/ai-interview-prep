@@ -358,8 +358,10 @@ describe("generateKitDraft", () => {
       expect(
         mockedValidateGeneratedKit
       ).toHaveBeenCalledWith({
+        role,
         requirements,
         questions,
+        flashcards,
         schedule,
       });
     }
@@ -604,8 +606,10 @@ describe("generateKitDraft", () => {
       expect(
         mockedValidateGeneratedKit
       ).toHaveBeenCalledWith({
+        role,
         requirements,
         questions,
+        flashcards,
         schedule,
       });
     }

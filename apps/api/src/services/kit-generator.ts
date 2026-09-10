@@ -77,8 +77,10 @@ export async function generateKitDraft(
   // Step 8: Validate the complete generated kit before it can
   // be persisted or marked as ready.
   const validation = validateGeneratedKit({
+    role,
     requirements,
     questions: questionResult.questions,
+    flashcards,
     schedule,
   });
 

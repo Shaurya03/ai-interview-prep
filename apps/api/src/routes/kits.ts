@@ -27,6 +27,10 @@ const updateBuilderSchema = z.union([
   }),
 
   z.object({
+    questionOrder: z.array(z.string().trim().min(1)).min(1),
+  }),
+
+  z.object({
     flashcardId: z.string().trim().min(1),
     front: z.string().trim().min(1).optional(),
     back: z.string().trim().min(1).optional(),
@@ -69,7 +73,7 @@ kitsRouter.get(
         _id: request.params.id,
         ownerId: request.userId,
       }).select(
-        "name jobDescription companyUrl daysAvailable status data createdAt updatedAt"
+        "name jobDescription companyUrl daysAvailable status data builderState createdAt updatedAt"
       );
 
       if (!kit) {
@@ -182,6 +186,103 @@ kitsRouter.patch(
           error: {
             code: "KIT_DATA_MISSING",
             message: "This kit does not contain generated data.",
+          },
+        });
+      }
+
+      /*
+       * Question reorder
+       */
+      if ("questionOrder" in parsed.data) {
+        const { questionOrder } = parsed.data;
+
+        if (!data.questions) {
+          return response.status(409).json({
+            error: {
+              code: "KIT_DATA_MISSING",
+              message: "This kit does not contain generated questions.",
+            },
+          });
+        }
+
+        const currentQuestionIds = data.questions.map(
+          (question) => question.id
+        );
+
+        const uniqueQuestionIds = new Set(questionOrder);
+
+        if (uniqueQuestionIds.size !== questionOrder.length) {
+          return response.status(400).json({
+            error: {
+              code: "INVALID_QUESTION_ORDER",
+              message: "Question order cannot contain duplicate question ids.",
+            },
+          });
+        }
+
+        if (
+          questionOrder.length !== currentQuestionIds.length ||
+          !currentQuestionIds.every((questionId) =>
+            uniqueQuestionIds.has(questionId)
+          )
+        ) {
+          return response.status(400).json({
+            error: {
+              code: "INVALID_QUESTION_ORDER",
+              message:
+                "Question order must contain every existing question exactly once.",
+            },
+          });
+        }
+
+        const questionsById = new Map(
+          data.questions.map((question) => [question.id, question])
+        );
+
+        data.questions = questionOrder.map(
+          (questionId) => questionsById.get(questionId)!
+        );
+
+        const builderState = (kit.builderState ?? {}) as {
+          questionOrder?: string[];
+          editedQuestions?: Record<
+            string,
+            {
+              prompt?: string;
+              answer_outline?: string;
+            }
+          >;
+          editedFlashcards?: Record<
+            string,
+            {
+              front?: string;
+              back?: string;
+            }
+          >;
+          editedCompanyBrief?: {
+            summary?: string;
+            what_they_do?: string;
+          };
+          deletedQuestionIds?: string[];
+          deletedFlashcardIds?: string[];
+        };
+
+        builderState.questionOrder = [...questionOrder];
+
+        kit.data = data;
+        kit.builderState = builderState;
+
+        kit.markModified("data");
+        kit.markModified("builderState");
+
+        await kit.save();
+
+        return response.json({
+          kit: {
+            _id: kit._id,
+            status: kit.status,
+            data: kit.data,
+            builderState: kit.builderState,
           },
         });
       }

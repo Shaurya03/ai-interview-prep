@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type DragEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 const API_URL = "http://localhost:4000";
@@ -88,6 +88,9 @@ type Kit = {
   data?: GeneratedKit | null;
   createdAt: string;
   updatedAt: string;
+  builderState?: {
+    questionOrder?: string[];
+  };
 };
 
 export default function KitDetailPage() {
@@ -114,6 +117,11 @@ export default function KitDetailPage() {
     null
   );
   const [deleteQuestionError, setDeleteQuestionError] = useState("");
+  const [questionOrder, setQuestionOrder] = useState<string[] | null>(null);
+  const [isReorderingQuestions, setIsReorderingQuestions] = useState(false);
+  const [questionOrderError, setQuestionOrderError] = useState("");
+  const [draggedQuestionId, setDraggedQuestionId] = useState<string | null>(null);
+  const [dragOverQuestionId, setDragOverQuestionId] = useState<string | null>(null);
 
   const [editingFlashcardId, setEditingFlashcardId] = useState<string | null>(
     null
@@ -158,6 +166,12 @@ export default function KitDetailPage() {
 
         if (!cancelled) {
           setKit(result.kit);
+          setQuestionOrder(
+            Array.isArray(result.kit?.builderState?.questionOrder)
+              ? result.kit.builderState.questionOrder
+              : null
+          );
+          setQuestionOrderError("");
           setError("");
         }
       } catch {
@@ -306,6 +320,165 @@ export default function KitDetailPage() {
     }
   }
 
+  function getOrderedQuestions(questions: Question[]) {
+    if (!questionOrder || questionOrder.length === 0) {
+      return questions;
+    }
+
+    const questionMap = new Map(
+      questions.map((question) => [question.id, question])
+    );
+
+    const ordered = questionOrder
+      .map((questionId) => questionMap.get(questionId))
+      .filter((question): question is Question => Boolean(question));
+
+    const orderedIds = new Set(ordered.map((question) => question.id));
+
+    return [
+      ...ordered,
+      ...questions.filter((question) => !orderedIds.has(question.id)),
+    ];
+  }
+
+  async function saveQuestionOrder(nextOrder: string[]) {
+    if (!kit?.data?.questions || isReorderingQuestions) {
+      return;
+    }
+
+    const previousOrder = getOrderedQuestions(kit.data.questions).map(
+      (question) => question.id
+    );
+
+    if (
+      nextOrder.length !== previousOrder.length ||
+      nextOrder.every((questionId, index) => questionId === previousOrder[index])
+    ) {
+      return;
+    }
+
+    setIsReorderingQuestions(true);
+    setQuestionOrderError("");
+    setQuestionOrder(nextOrder);
+
+    try {
+      const response = await fetch(`${API_URL}/kits/${kit._id}/builder`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          questionOrder: nextOrder,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setQuestionOrder(previousOrder);
+        setQuestionOrderError(
+          result.error?.message ?? "Unable to reorder questions."
+        );
+        return;
+      }
+
+      if (Array.isArray(result.kit?.builderState?.questionOrder)) {
+        setQuestionOrder(result.kit.builderState.questionOrder);
+      }
+    } catch {
+      setQuestionOrder(previousOrder);
+      setQuestionOrderError("Unable to connect to the server.");
+    } finally {
+      setIsReorderingQuestions(false);
+    }
+  }
+
+  function handleQuestionDragStart(
+    event: DragEvent<HTMLElement>,
+    questionId: string
+  ) {
+    if (isReorderingQuestions || editingQuestionId) {
+      event.preventDefault();
+      return;
+    }
+
+    setDraggedQuestionId(questionId);
+    setDragOverQuestionId(questionId);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", questionId);
+  }
+
+  function handleQuestionDragOver(
+    event: DragEvent<HTMLElement>,
+    questionId: string
+  ) {
+    if (
+      !draggedQuestionId ||
+      draggedQuestionId === questionId ||
+      isReorderingQuestions ||
+      editingQuestionId
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDragOverQuestionId(questionId);
+  }
+
+  async function handleQuestionDrop(
+    event: DragEvent<HTMLElement>,
+    questionId: string
+  ) {
+    event.preventDefault();
+
+    const sourceQuestionId =
+      draggedQuestionId ?? event.dataTransfer.getData("text/plain");
+
+    if (
+      !kit?.data?.questions ||
+      !sourceQuestionId ||
+      sourceQuestionId === questionId ||
+      isReorderingQuestions ||
+      editingQuestionId
+    ) {
+      setDraggedQuestionId(null);
+      setDragOverQuestionId(null);
+      return;
+    }
+
+    const currentQuestions = getOrderedQuestions(kit.data.questions);
+    const sourceIndex = currentQuestions.findIndex(
+      (question) => question.id === sourceQuestionId
+    );
+    const targetIndex = currentQuestions.findIndex(
+      (question) => question.id === questionId
+    );
+
+    if (sourceIndex === -1 || targetIndex === -1) {
+      setDraggedQuestionId(null);
+      setDragOverQuestionId(null);
+      return;
+    }
+
+    const nextQuestions = [...currentQuestions];
+    const [movedQuestion] = nextQuestions.splice(sourceIndex, 1);
+    nextQuestions.splice(targetIndex, 0, movedQuestion);
+
+    setDraggedQuestionId(null);
+    setDragOverQuestionId(null);
+
+    await saveQuestionOrder(
+      nextQuestions.map((question) => question.id)
+    );
+  }
+
+  function handleQuestionDragEnd() {
+    setDraggedQuestionId(null);
+    setDragOverQuestionId(null);
+  }
+
   async function deleteQuestion(questionId: string) {
     if (!kit) {
       return;
@@ -359,8 +532,13 @@ export default function KitDetailPage() {
         return {
           ...currentKit,
           data: result.kit.data,
+          builderState: result.kit.builderState ?? currentKit.builderState,
         };
       });
+
+      if (Array.isArray(result.kit?.builderState?.questionOrder)) {
+        setQuestionOrder(result.kit.builderState.questionOrder);
+      }
 
       if (editingQuestionId === questionId) {
         cancelEditingQuestion();
@@ -964,7 +1142,8 @@ export default function KitDetailPage() {
                   </h2>
 
                   <p className="mt-1 text-sm text-zinc-500">
-                    Questions generated from the extracted requirements.
+                    Questions generated from the extracted requirements. Drag cards
+                    to reorder them.
                   </p>
                 </div>
 
@@ -974,14 +1153,34 @@ export default function KitDetailPage() {
               </div>
 
               <div className="mt-6 space-y-4">
-                {data.questions.map((question, index) => {
+                {getOrderedQuestions(data.questions).map((question, index) => {
                   const isEditing =
                     editingQuestionId === question.id;
 
                   return (
                     <article
                       key={question.id}
-                      className="rounded-xl border border-zinc-200 p-5"
+                      draggable={!editingQuestionId && !isReorderingQuestions}
+                      onDragStart={(event) =>
+                        handleQuestionDragStart(event, question.id)
+                      }
+                      onDragOver={(event) =>
+                        handleQuestionDragOver(event, question.id)
+                      }
+                      onDrop={(event) =>
+                        void handleQuestionDrop(event, question.id)
+                      }
+                      onDragEnd={handleQuestionDragEnd}
+                      className={`rounded-xl border p-5 transition ${dragOverQuestionId === question.id &&
+                          draggedQuestionId !== question.id
+                          ? "border-zinc-950 bg-zinc-50 shadow-sm"
+                          : "border-zinc-200"
+                        } ${draggedQuestionId === question.id
+                          ? "cursor-grabbing opacity-50"
+                          : !editingQuestionId
+                            ? "cursor-grab"
+                            : ""
+                        }`}
                     >
                       {isEditing ? (
                         <div>
@@ -1080,7 +1279,14 @@ export default function KitDetailPage() {
                               </div>
                             </div>
 
-                            <div className="flex shrink-0 gap-2">
+                            <div className="flex flex-wrap items-center justify-end gap-2">
+                              <span
+                                className="hidden select-none rounded-lg border border-dashed border-zinc-200 px-2.5 py-1.5 text-xs text-zinc-400 sm:inline-flex"
+                                aria-hidden="true"
+                              >
+                                ⋮⋮ Drag
+                              </span>
+
                               <button
                                 type="button"
                                 onClick={() =>
@@ -1124,6 +1330,12 @@ export default function KitDetailPage() {
               {deleteQuestionError && (
                 <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
                   {deleteQuestionError}
+                </div>
+              )}
+
+              {questionOrderError && (
+                <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+                  {questionOrderError}
                 </div>
               )}
             </section>

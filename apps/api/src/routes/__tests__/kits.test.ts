@@ -1001,4 +1001,122 @@ describe("PATCH /kits/:id/builder", () => {
       "INVALID_BUILDER_UPDATE"
     );
   });
+
+  it("reorders questions successfully", async () => {
+    mockKit.data.questions.push({
+      id: "q2",
+      requirement_ids: ["r1"],
+      category: "behavioural",
+      prompt: "Tell me about a React project.",
+      answer_outline: "Explain the project, your contribution, and the result.",
+      difficulty: 1,
+    });
+
+    mockedKit.findOne.mockResolvedValue(mockKit as never);
+
+    const app = createApp();
+
+    const response = await request(app)
+      .patch("/kits/kit-123/builder")
+      .send({
+        questionOrder: ["q2", "q1"],
+      })
+      .expect(200);
+
+    expect(mockKit.data.questions.map((question: { id: string }) => question.id)).toEqual([
+      "q2",
+      "q1",
+    ]);
+
+    expect(mockKit.builderState.questionOrder).toEqual(["q2", "q1"]);
+
+    expect(mockMarkModified).toHaveBeenCalledWith("data");
+    expect(mockMarkModified).toHaveBeenCalledWith("builderState");
+
+    expect(mockSave).toHaveBeenCalledTimes(1);
+
+    expect(response.body.kit.data.questions.map(
+      (question: { id: string }) => question.id
+    )).toEqual(["q2", "q1"]);
+  });
+
+  it("returns 400 when question order contains duplicate ids", async () => {
+    mockKit.data.questions.push({
+      id: "q2",
+      requirement_ids: ["r1"],
+      category: "behavioural",
+      prompt: "Tell me about a React project.",
+      answer_outline: "Explain the project, your contribution, and the result.",
+      difficulty: 1,
+    });
+
+    mockedKit.findOne.mockResolvedValue(mockKit as never);
+
+    const app = createApp();
+
+    const response = await request(app)
+      .patch("/kits/kit-123/builder")
+      .send({
+        questionOrder: ["q1", "q1"],
+      })
+      .expect(400);
+
+    expect(response.body).toEqual({
+      error: {
+        code: "INVALID_QUESTION_ORDER",
+        message: "Question order cannot contain duplicate question ids.",
+      },
+    });
+
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when question order does not contain every question", async () => {
+    mockKit.data.questions.push({
+      id: "q2",
+      requirement_ids: ["r1"],
+      category: "behavioural",
+      prompt: "Tell me about a React project.",
+      answer_outline: "Explain the project, your contribution, and the result.",
+      difficulty: 1,
+    });
+
+    mockedKit.findOne.mockResolvedValue(mockKit as never);
+
+    const app = createApp();
+
+    const response = await request(app)
+      .patch("/kits/kit-123/builder")
+      .send({
+        questionOrder: ["q1"],
+      })
+      .expect(400);
+
+    expect(response.body).toEqual({
+      error: {
+        code: "INVALID_QUESTION_ORDER",
+        message:
+          "Question order must contain every existing question exactly once.",
+      },
+    });
+
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for an invalid question order payload", async () => {
+    mockedKit.findOne.mockResolvedValue(mockKit as never);
+
+    const app = createApp();
+
+    const response = await request(app)
+      .patch("/kits/kit-123/builder")
+      .send({
+        questionOrder: [],
+      })
+      .expect(400);
+
+    expect(response.body.error.code).toBe("INVALID_BUILDER_UPDATE");
+
+    expect(mockSave).not.toHaveBeenCalled();
+  });
 });

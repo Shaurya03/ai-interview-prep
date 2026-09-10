@@ -2,10 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/require-auth.js";
 import { Kit } from "../models/kit.js";
-import { extractRequirements } from "../services/requirement-extractor.js";
-import { researchCompany } from "../services/researcher.js";
-import { generateCompanyBrief } from "../services/company-brief-generator.js";
-import { generateQuestions } from "../services/question-generator.js";
+import { generateKitDraft } from "../services/kit-generator.js";
 
 const createKitSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -54,12 +51,14 @@ kitsRouter.get(
 );
 
 kitsRouter.post(
-  "/:id/research",
+  "/:id/generate",
   async (request: AuthenticatedRequest, response, next) => {
     try {
+      const userId = request.userId;
+
       const kit = await Kit.findOne({
         _id: request.params.id,
-        ownerId: request.userId,
+        ownerId: userId,
       });
 
       if (!kit) {
@@ -71,78 +70,87 @@ kitsRouter.post(
         });
       }
 
-      const research = await researchCompany(kit.companyUrl);
-
-      return response.json({
-        research,
-      });
-    } catch (error) {
-      return next(error);
-    }
-  }
-);
-
-kitsRouter.post(
-  "/:id/company-brief",
-  async (request: AuthenticatedRequest, response, next) => {
-    try {
-      const kit = await Kit.findOne({
-        _id: request.params.id,
-        ownerId: request.userId,
-      });
-
-      if (!kit) {
-        return response.status(404).json({
+      if (kit.status === "generating") {
+        return response.status(409).json({
           error: {
-            code: "KIT_NOT_FOUND",
-            message: "Interview kit not found.",
+            code: "GENERATION_IN_PROGRESS",
+            message: "This interview kit is already being generated.",
           },
         });
       }
 
-      const research = await researchCompany(kit.companyUrl);
+      kit.status = "generating";
+      await kit.save();
 
-      const companyBrief = await generateCompanyBrief(
-        kit.companyUrl,
-        research
-      );
+      try {
+        const draft = await generateKitDraft(
+          kit.jobDescription,
+          kit.companyUrl,
+          kit.daysAvailable
+        );
 
-      return response.json({
-        companyBrief,
-        research,
-      });
-    } catch (error) {
-      return next(error);
-    }
-  }
-);
+        const data = {
+          source: {
+            company: "",
+            company_url: kit.companyUrl,
+            role: draft.role.title,
+            location: "",
+            jd_chars: kit.jobDescription.length,
+            researched_at: new Date().toISOString(),
+            pages_used: draft.research.pagesUsed,
+          },
 
-kitsRouter.post(
-  "/:id/questions",
-  async (request: AuthenticatedRequest, response, next) => {
-    try {
-      const kit = await Kit.findOne({
-        _id: request.params.id,
-        ownerId: request.userId,
-      });
+          company_brief: {
+            summary: draft.companyBrief.summary,
+            what_they_do: draft.companyBrief.what_they_do,
+            sources: draft.companyBrief.sources,
+          },
 
-      if (!kit) {
-        return response.status(404).json({
+          role: {
+            title: draft.role.title,
+            seniority: draft.role.seniority,
+            responsibilities: draft.role.responsibilities,
+            requirements: draft.requirements,
+          },
+
+          questions: draft.questions,
+
+          flashcards: draft.flashcards,
+
+          schedule: draft.schedule,
+
+          coverage: {
+            uncovered_requirement_ids:
+              draft.coverage.uncoveredRequirementIds,
+            passes: draft.coverage.passes,
+          },
+        };
+
+        kit.data = data;
+        kit.status = "ready";
+
+        await kit.save();
+
+        return response.status(200).json({
+          status: "ready",
+          data: kit.data,
+        });
+      } catch (error) {
+        kit.status = "failed";
+        await kit.save();
+
+        console.error("Kit generation failed:", error);
+
+        return response.status(500).json({
           error: {
-            code: "KIT_NOT_FOUND",
-            message: "Interview kit not found.",
+            code: "GENERATION_FAILED",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Interview kit generation failed.",
           },
         });
       }
-
-      const requirements = await extractRequirements(kit.jobDescription);
-
-      const questions = await generateQuestions(requirements);
-
-      return response.json({
-        requirements,
-        questions,
-      });
     } catch (error) {
       return next(error);
     }
@@ -173,58 +181,3 @@ kitsRouter.post("/", async (request: AuthenticatedRequest, response, next) => {
     return next(error);
   }
 });
-
-kitsRouter.post(
-  "/:id/generate-requirements",
-  async (request: AuthenticatedRequest, response, next) => {
-    try {
-      const kit = await Kit.findOne({
-        _id: request.params.id,
-        ownerId: request.userId,
-      });
-
-      if (!kit) {
-        return response.status(404).json({
-          error: {
-            code: "KIT_NOT_FOUND",
-            message: "Interview kit not found.",
-          },
-        });
-      }
-
-      kit.status = "generating";
-      await kit.save();
-
-      try {
-        const requirements = await extractRequirements(kit.jobDescription);
-
-        kit.data = {
-          ...(kit.data ?? {}),
-          role: {
-            ...((kit.data as { role?: Record<string, unknown> } | null)
-              ?.role ?? {}),
-            requirements,
-          },
-        };
-
-        kit.status = "ready";
-        await kit.save();
-
-        return response.json({
-          kit: {
-            id: kit._id,
-            status: kit.status,
-            requirements,
-          },
-        });
-      } catch (error) {
-        kit.status = "failed";
-        await kit.save();
-
-        throw error;
-      }
-    } catch (error) {
-      return next(error);
-    }
-  }
-);

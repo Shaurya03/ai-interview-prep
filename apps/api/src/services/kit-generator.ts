@@ -1,17 +1,21 @@
 import { generateCompanyBrief } from "./company-brief-generator.js";
+import { generateFlashcards } from "./flashcard-generator.js";
 import { generateQuestionPipeline } from "./question-pipeline.js";
 import { extractRequirements } from "./requirement-extractor.js";
+import { extractRole } from "./role-extractor.js";
 import { researchCompany } from "./researcher.js";
 import { generateSchedule } from "./schedule-generator.js";
 import { validateGeneratedKit } from "./kit-validator.js";
 
 export interface GeneratedKitDraft {
+  role: Awaited<ReturnType<typeof extractRole>>;
   requirements: Awaited<ReturnType<typeof extractRequirements>>;
   research: Awaited<ReturnType<typeof researchCompany>>;
   companyBrief: Awaited<ReturnType<typeof generateCompanyBrief>>;
   questions: Awaited<
     ReturnType<typeof generateQuestionPipeline>
   >["questions"];
+  flashcards: Awaited<ReturnType<typeof generateFlashcards>>;
   schedule: Awaited<ReturnType<typeof generateSchedule>>;
   coverage: {
     uncoveredRequirementIds: string[];
@@ -36,19 +40,22 @@ export async function generateKitDraft(
     throw new Error("daysAvailable must be a positive integer.");
   }
 
-  // Step 1: Extract explicit requirements from the job description.
+  // Step 1: Extract role information from the job description.
+  const role = await extractRole(jobDescription);
+
+  // Step 2: Extract explicit requirements from the job description.
   const requirements = await extractRequirements(jobDescription);
 
-  // Step 2: Research the company website.
+  // Step 3: Research the company website.
   const research = await researchCompany(companyUrl);
 
-  // Step 3: Generate a company brief from the retrieved research.
+  // Step 4: Generate a company brief from the retrieved research.
   const companyBrief = await generateCompanyBrief(
     companyUrl,
     research
   );
 
-  // Step 4: Generate questions using the requirements and
+  // Step 5: Generate questions using the requirements and
   // company-specific context.
   const questionResult = await generateQuestionPipeline(
     requirements,
@@ -57,14 +64,17 @@ export async function generateKitDraft(
     }
   );
 
-  // Step 5: Generate a deterministic preparation schedule.
+  // Step 6: Generate flashcards from the extracted requirements.
+  const flashcards = await generateFlashcards(requirements);
+
+  // Step 7: Generate a deterministic preparation schedule.
   const schedule = generateSchedule(
     requirements,
     questionResult.questions,
     daysAvailable
   );
 
-  // Step 6: Validate the complete generated kit before it can
+  // Step 8: Validate the complete generated kit before it can
   // be persisted or marked as ready.
   const validation = validateGeneratedKit({
     requirements,
@@ -79,10 +89,12 @@ export async function generateKitDraft(
   }
 
   return {
+    role,
     requirements,
     research,
     companyBrief,
     questions: questionResult.questions,
+    flashcards,
     schedule,
     coverage: {
       uncoveredRequirementIds:

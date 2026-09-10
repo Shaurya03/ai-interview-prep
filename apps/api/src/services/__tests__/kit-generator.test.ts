@@ -1,17 +1,17 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { generateKitDraft } from "../kit-generator.js";
 import type { CompanyBrief } from "../company-brief-generator.js";
+import type { GeneratedFlashcard } from "../flashcard-generator.js";
 import type { GeneratedQuestion } from "../question-generator.js";
 import type { ExtractedRequirement } from "../requirement-extractor.js";
+import type { ExtractedRole } from "../role-extractor.js";
 import type { GeneratedSchedule } from "../schedule-generator.js";
 import type { ResearchResult } from "../researcher.js";
+
+vi.mock("../role-extractor.js", () => ({
+  extractRole: vi.fn(),
+}));
 
 vi.mock("../requirement-extractor.js", () => ({
   extractRequirements: vi.fn(),
@@ -29,6 +29,10 @@ vi.mock("../question-pipeline.js", () => ({
   generateQuestionPipeline: vi.fn(),
 }));
 
+vi.mock("../flashcard-generator.js", () => ({
+  generateFlashcards: vi.fn(),
+}));
+
 vi.mock("../schedule-generator.js", () => ({
   generateSchedule: vi.fn(),
 }));
@@ -37,12 +41,16 @@ vi.mock("../kit-validator.js", () => ({
   validateGeneratedKit: vi.fn(),
 }));
 
+import { extractRole } from "../role-extractor.js";
 import { extractRequirements } from "../requirement-extractor.js";
 import { researchCompany } from "../researcher.js";
 import { generateCompanyBrief } from "../company-brief-generator.js";
 import { generateQuestionPipeline } from "../question-pipeline.js";
+import { generateFlashcards } from "../flashcard-generator.js";
 import { generateSchedule } from "../schedule-generator.js";
 import { validateGeneratedKit } from "../kit-validator.js";
+
+const mockedExtractRole = vi.mocked(extractRole);
 
 const mockedExtractRequirements = vi.mocked(
   extractRequirements
@@ -60,6 +68,10 @@ const mockedGenerateQuestionPipeline = vi.mocked(
   generateQuestionPipeline
 );
 
+const mockedGenerateFlashcards = vi.mocked(
+  generateFlashcards
+);
+
 const mockedGenerateSchedule = vi.mocked(
   generateSchedule
 );
@@ -67,6 +79,15 @@ const mockedGenerateSchedule = vi.mocked(
 const mockedValidateGeneratedKit = vi.mocked(
   validateGeneratedKit
 );
+
+const role: ExtractedRole = {
+  title: "Software Engineer",
+  seniority: "Mid-level",
+  responsibilities: [
+    "Build and maintain web applications",
+    "Collaborate with engineering teams",
+  ],
+};
 
 const requirements: ExtractedRequirement[] = [
   {
@@ -122,6 +143,21 @@ const questions: GeneratedQuestion[] = [
   },
 ];
 
+const flashcards: GeneratedFlashcard[] = [
+  {
+    id: "f1",
+    front: "What is the JavaScript event loop?",
+    back: "It coordinates synchronous code with asynchronous callbacks.",
+    requirement_ids: ["r1"],
+  },
+  {
+    id: "f2",
+    front: "What is React reconciliation?",
+    back: "The process React uses to determine what needs to be updated.",
+    requirement_ids: ["r2"],
+  },
+];
+
 const schedule: GeneratedSchedule = {
   days_available: 5,
   days: [
@@ -171,8 +207,10 @@ describe("generateKitDraft", () => {
   });
 
   it(
-    "orchestrates requirements, research, company brief, questions, schedule, and validation",
+    "orchestrates role, requirements, research, company brief, questions, flashcards, schedule, and validation",
     async () => {
+      mockedExtractRole.mockResolvedValue(role);
+
       mockedExtractRequirements.mockResolvedValue(
         requirements
       );
@@ -191,6 +229,10 @@ describe("generateKitDraft", () => {
         passes: 1,
       });
 
+      mockedGenerateFlashcards.mockResolvedValue(
+        flashcards
+      );
+
       mockedGenerateSchedule.mockReturnValue(
         schedule
       );
@@ -206,6 +248,8 @@ describe("generateKitDraft", () => {
         daysAvailable
       );
 
+      expect(result.role).toEqual(role);
+
       expect(result.requirements).toEqual(
         requirements
       );
@@ -220,6 +264,10 @@ describe("generateKitDraft", () => {
         questions
       );
 
+      expect(result.flashcards).toEqual(
+        flashcards
+      );
+
       expect(result.schedule).toEqual(
         schedule
       );
@@ -228,6 +276,14 @@ describe("generateKitDraft", () => {
         uncoveredRequirementIds: [],
         passes: 1,
       });
+
+      expect(mockedExtractRole).toHaveBeenCalledTimes(
+        1
+      );
+
+      expect(mockedExtractRole).toHaveBeenCalledWith(
+        jobDescription
+      );
 
       expect(
         mockedExtractRequirements
@@ -274,6 +330,16 @@ describe("generateKitDraft", () => {
       );
 
       expect(
+        mockedGenerateFlashcards
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        mockedGenerateFlashcards
+      ).toHaveBeenCalledWith(
+        requirements
+      );
+
+      expect(
         mockedGenerateSchedule
       ).toHaveBeenCalledTimes(1);
 
@@ -311,6 +377,10 @@ describe("generateKitDraft", () => {
     );
 
     expect(
+      mockedExtractRole
+    ).not.toHaveBeenCalled();
+
+    expect(
       mockedExtractRequirements
     ).not.toHaveBeenCalled();
 
@@ -324,6 +394,10 @@ describe("generateKitDraft", () => {
 
     expect(
       mockedGenerateQuestionPipeline
+    ).not.toHaveBeenCalled();
+
+    expect(
+      mockedGenerateFlashcards
     ).not.toHaveBeenCalled();
 
     expect(
@@ -347,6 +421,10 @@ describe("generateKitDraft", () => {
     );
 
     expect(
+      mockedExtractRole
+    ).not.toHaveBeenCalled();
+
+    expect(
       mockedExtractRequirements
     ).not.toHaveBeenCalled();
 
@@ -360,6 +438,10 @@ describe("generateKitDraft", () => {
 
     expect(
       mockedGenerateQuestionPipeline
+    ).not.toHaveBeenCalled();
+
+    expect(
+      mockedGenerateFlashcards
     ).not.toHaveBeenCalled();
 
     expect(
@@ -383,6 +465,10 @@ describe("generateKitDraft", () => {
     );
 
     expect(
+      mockedExtractRole
+    ).not.toHaveBeenCalled();
+
+    expect(
       mockedExtractRequirements
     ).not.toHaveBeenCalled();
 
@@ -399,6 +485,10 @@ describe("generateKitDraft", () => {
     ).not.toHaveBeenCalled();
 
     expect(
+      mockedGenerateFlashcards
+    ).not.toHaveBeenCalled();
+
+    expect(
       mockedGenerateSchedule
     ).not.toHaveBeenCalled();
 
@@ -410,6 +500,8 @@ describe("generateKitDraft", () => {
   it(
     "preserves the number of passes used by the question pipeline",
     async () => {
+      mockedExtractRole.mockResolvedValue(role);
+
       mockedExtractRequirements.mockResolvedValue(
         requirements
       );
@@ -427,6 +519,10 @@ describe("generateKitDraft", () => {
         uncoveredRequirementIds: [],
         passes: 2,
       });
+
+      mockedGenerateFlashcards.mockResolvedValue(
+        flashcards
+      );
 
       mockedGenerateSchedule.mockReturnValue(
         schedule
@@ -460,6 +556,8 @@ describe("generateKitDraft", () => {
   it(
     "rejects the generated kit when final validation fails",
     async () => {
+      mockedExtractRole.mockResolvedValue(role);
+
       mockedExtractRequirements.mockResolvedValue(
         requirements
       );
@@ -477,6 +575,10 @@ describe("generateKitDraft", () => {
         uncoveredRequirementIds: [],
         passes: 1,
       });
+
+      mockedGenerateFlashcards.mockResolvedValue(
+        flashcards
+      );
 
       mockedGenerateSchedule.mockReturnValue(
         schedule

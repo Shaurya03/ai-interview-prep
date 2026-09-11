@@ -847,14 +847,179 @@ kitsRouter.post(
 
         const validatedKit = kitSchema.parse(data);
 
+        /*
+         * Preserve builder edits when a kit is regenerated.
+         *
+         * The generator creates a fresh draft, but user edits live in
+         * builderState. Reapply those edits by stable question/flashcard ids,
+         * then restore deleted questions and the user's question order.
+         */
+        const builderState = (kit.builderState ?? {}) as {
+          editedQuestions?: Record<
+            string,
+            {
+              prompt?: string;
+              answer_outline?: string;
+              category?:
+              | "technical"
+              | "behavioural"
+              | "system-design"
+              | "company-fit";
+            }
+          >;
+          editedFlashcards?: Record<
+            string,
+            {
+              front?: string;
+              back?: string;
+            }
+          >;
+          editedCompanyBrief?: {
+            summary?: string;
+            what_they_do?: string;
+          };
+          questionOrder?: string[];
+          deletedQuestionIds?: string[];
+          deletedFlashcardIds?: string[];
+        };
+
+        if (validatedKit.questions && builderState.editedQuestions) {
+          for (const question of validatedKit.questions) {
+            const edit = builderState.editedQuestions[question.id];
+
+            if (!edit) continue;
+
+            if (edit.prompt !== undefined) {
+              question.prompt = edit.prompt;
+            }
+
+            if (edit.answer_outline !== undefined) {
+              question.answer_outline = edit.answer_outline;
+            }
+
+            if (edit.category !== undefined) {
+              question.category = edit.category;
+            }
+          }
+        }
+
+        if (validatedKit.flashcards) {
+          if (builderState.editedFlashcards) {
+            for (const flashcard of validatedKit.flashcards) {
+              const edit = builderState.editedFlashcards[flashcard.id];
+
+              if (!edit) continue;
+
+              if (edit.front !== undefined) {
+                flashcard.front = edit.front;
+              }
+
+              if (edit.back !== undefined) {
+                flashcard.back = edit.back;
+              }
+            }
+          }
+
+          if (builderState.deletedFlashcardIds?.length) {
+            const deletedFlashcardIds = new Set(
+              builderState.deletedFlashcardIds
+            );
+
+            validatedKit.flashcards = validatedKit.flashcards.filter(
+              (flashcard) => !deletedFlashcardIds.has(flashcard.id)
+            );
+          }
+        }
+
+        if (validatedKit.company_brief && builderState.editedCompanyBrief) {
+          if (builderState.editedCompanyBrief.summary !== undefined) {
+            validatedKit.company_brief.summary =
+              builderState.editedCompanyBrief.summary;
+          }
+
+          if (
+            builderState.editedCompanyBrief.what_they_do !== undefined
+          ) {
+            validatedKit.company_brief.what_they_do =
+              builderState.editedCompanyBrief.what_they_do;
+          }
+        }
+
+        if (
+          validatedKit.questions &&
+          builderState.deletedQuestionIds?.length
+        ) {
+          const deletedQuestionIds = new Set(
+            builderState.deletedQuestionIds
+          );
+
+          validatedKit.questions = validatedKit.questions.filter(
+            (question) => !deletedQuestionIds.has(question.id)
+          );
+
+          validatedKit.schedule.days = validatedKit.schedule.days.map(
+            (day) => ({
+              ...day,
+              question_ids: day.question_ids.filter(
+                (questionId) => !deletedQuestionIds.has(questionId)
+              ),
+            })
+          );
+        }
+
+        if (
+          validatedKit.questions &&
+          builderState.questionOrder?.length
+        ) {
+          const questionsById = new Map(
+            validatedKit.questions.map((question) => [question.id, question])
+          );
+
+          const orderedQuestions = builderState.questionOrder
+            .map((questionId) => questionsById.get(questionId))
+            .filter(
+              (question): question is (typeof validatedKit.questions)[number] =>
+                question !== undefined
+            );
+
+          const orderedIds = new Set(
+            orderedQuestions.map((question) => question.id)
+          );
+
+          const newQuestions = validatedKit.questions.filter(
+            (question) => !orderedIds.has(question.id)
+          );
+
+          validatedKit.questions = [...orderedQuestions, ...newQuestions];
+        }
+
+        const remainingQuestionRequirementIds = new Set(
+          validatedKit.questions
+            .map((question) => question.requirement_ids)
+            .flat()
+        );
+
+        validatedKit.coverage.uncovered_requirement_ids =
+          validatedKit.role.requirements
+            .filter(
+              (requirement) =>
+                !remainingQuestionRequirementIds.has(requirement.id)
+            )
+            .map((requirement) => requirement.id);
+
         kit.data = validatedKit;
+        kit.builderState = builderState;
         kit.status = "ready";
+
+        kit.markModified("data");
+        kit.markModified("builderState");
 
         await kit.save();
 
         return response.status(200).json({
           status: "ready",
           data: kit.data,
+          builderState: kit.builderState,
         });
       } catch (error) {
         kit.status = "failed";

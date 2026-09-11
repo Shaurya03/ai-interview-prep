@@ -24,6 +24,7 @@ const mockKit = {
       {
         prompt: string;
         answer_outline: string;
+        category?: "technical" | "behavioural" | "system-design" | "company-fit";
       }
     >,
     editedFlashcards: {} as Record<
@@ -235,6 +236,7 @@ describe("POST /kits/:id/generate", () => {
     expect(response.body).toEqual({
       status: "ready",
       data: mockKit.data,
+      builderState: mockKit.builderState,
     });
   });
 
@@ -312,6 +314,127 @@ describe("POST /kits/:id/generate", () => {
 
     consoleErrorSpy.mockRestore();
   });
+  it("preserves builder edits, deletions, and question order when regenerating", async () => {
+    mockedKit.findOne.mockResolvedValue(mockKit as never);
+
+    mockKit.status = "ready";
+    mockKit.data = null;
+    mockKit.builderState = {
+      editedQuestions: {
+        q1: {
+          prompt: "My edited React question.",
+          answer_outline: "My edited answer outline.",
+          category: "behavioural",
+        },
+      },
+      editedFlashcards: {
+        f1: {
+          front: "My edited flashcard front.",
+          back: "My edited flashcard back.",
+        },
+      },
+      editedCompanyBrief: {
+        summary: "My edited company summary.",
+        what_they_do: "My edited company description.",
+      },
+      questionOrder: ["q2", "q1"],
+      deletedQuestionIds: ["q3"],
+      deletedFlashcardIds: [],
+    };
+
+    mockGenerateKitDraft.mockResolvedValue({
+      ...generatedDraft,
+      questions: [
+        {
+          ...generatedDraft.questions[0],
+          id: "q1",
+          prompt: "Fresh generated question.",
+          answer_outline: "Fresh generated answer.",
+          category: "technical",
+        },
+        {
+          ...generatedDraft.questions[0],
+          id: "q2",
+          prompt: "Second generated question.",
+          answer_outline: "Second generated answer.",
+          category: "technical",
+        },
+        {
+          ...generatedDraft.questions[0],
+          id: "q3",
+          prompt: "Deleted question.",
+          answer_outline: "Deleted answer.",
+          category: "technical",
+        },
+      ],
+      flashcards: [
+        {
+          ...generatedDraft.flashcards[0],
+          id: "f1",
+          front: "Fresh generated front.",
+          back: "Fresh generated back.",
+        },
+      ],
+    });
+
+    const app = createApp();
+
+    const response = await request(app)
+      .post("/kits/kit-123/generate")
+      .expect(200);
+
+    expect(mockKit.status).toBe("ready");
+
+    expect(mockKit.data.questions.map(
+      (question: { id: string }) => question.id
+    )).toEqual(["q2", "q1"]);
+
+    expect(mockKit.data.questions.find(
+      (question: { id: string }) => question.id === "q1"
+    )).toMatchObject({
+      id: "q1",
+      prompt: "My edited React question.",
+      answer_outline: "My edited answer outline.",
+      category: "behavioural",
+    });
+
+    expect(mockKit.data.questions.find(
+      (question: { id: string }) => question.id === "q3"
+    )).toBeUndefined();
+
+    expect(mockKit.data.flashcards[0]).toMatchObject({
+      id: "f1",
+      front: "My edited flashcard front.",
+      back: "My edited flashcard back.",
+    });
+
+    expect(mockKit.data.company_brief).toMatchObject({
+      summary: "My edited company summary.",
+      what_they_do: "My edited company description.",
+    });
+
+    expect(mockKit.data.coverage.uncovered_requirement_ids).toEqual([]);
+
+    expect(mockKit.builderState).toMatchObject({
+      editedQuestions: {
+        q1: {
+          prompt: "My edited React question.",
+          answer_outline: "My edited answer outline.",
+          category: "behavioural",
+        },
+      },
+      questionOrder: ["q2", "q1"],
+      deletedQuestionIds: ["q3"],
+    });
+
+    expect(mockMarkModified).toHaveBeenCalledWith("data");
+    expect(mockMarkModified).toHaveBeenCalledWith("builderState");
+    expect(mockSave).toHaveBeenCalledTimes(2);
+
+    expect(response.body.status).toBe("ready");
+    expect(response.body.builderState).toEqual(mockKit.builderState);
+  });
+
 });
 
 describe("PATCH /kits/:id/builder", () => {

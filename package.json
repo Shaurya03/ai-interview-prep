@@ -6,25 +6,27 @@
     "dev": "npm run dev --workspace=web",
     "dev:api": "npm run dev --workspace=api",
     "build": "npm run build --workspace=web",
-    "lint": "npm run lint --workspace=web"
+    "lint": "npm run lint --workspace=web",
+    "evaluate": "tsx apps/api/src/evaluate.ts"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Shaurya03/ai-interview-prep.git"
+    "url": "git+[https://github.com/Shaurya03/ai-interview-prep.git](https://github.com/Shaurya03/ai-interview-prep.git)"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/Shaurya03/ai-interview-prep/issues"
+    "url": "[https://github.com/Shaurya03/ai-interview-prep/issues](https://github.com/Shaurya03/ai-interview-prep/issues)"
   },
-  "homepage": "https://github.com/Shaurya03/ai-interview-prep#readme",
+  "homepage": "[https://github.com/Shaurya03/ai-interview-prep#readme](https://github.com/Shaurya03/ai-interview-prep#readme)",
   "private": true,
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "devDependencies": {
+    "tsx": "^4.20.3",
     "vitest": "^5.0.0"
   }
 }

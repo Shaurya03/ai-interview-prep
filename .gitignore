@@ -12,3 +12,6 @@ coverage/
 # Tooling
 *.tsbuildinfo
 npm-debug.log*
+
+kits.json
+cases.json

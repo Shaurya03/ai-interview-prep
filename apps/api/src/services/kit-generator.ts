@@ -7,6 +7,8 @@ import { researchCompany } from "./researcher.js";
 import { generateSchedule } from "./schedule-generator.js";
 import { validateGeneratedKit } from "./kit-validator.js";
 
+const MAX_ROLE_EXTRACTION_ATTEMPTS = 2;
+
 export interface GeneratedKitDraft {
   role: Awaited<ReturnType<typeof extractRole>>;
   requirements: Awaited<ReturnType<typeof extractRequirements>>;
@@ -21,6 +23,52 @@ export interface GeneratedKitDraft {
     uncoveredRequirementIds: string[];
     passes: number;
   };
+}
+
+function isCompleteRole(
+  role: Awaited<ReturnType<typeof extractRole>>
+): boolean {
+  return (
+    typeof role.title === "string" &&
+    role.title.trim().length > 0 &&
+    typeof role.seniority === "string" &&
+    role.seniority.trim().length > 0 &&
+    Array.isArray(role.responsibilities) &&
+    role.responsibilities.some(
+      (responsibility) =>
+        typeof responsibility === "string" &&
+        responsibility.trim().length > 0
+    )
+  );
+}
+
+async function extractRoleWithRetry(
+  jobDescription: string
+): Promise<Awaited<ReturnType<typeof extractRole>>> {
+  let lastRole: Awaited<ReturnType<typeof extractRole>> | null = null;
+
+  for (
+    let attempt = 1;
+    attempt <= MAX_ROLE_EXTRACTION_ATTEMPTS;
+    attempt++
+  ) {
+    const role = await extractRole(jobDescription);
+    lastRole = role;
+
+    if (isCompleteRole(role)) {
+      return role;
+    }
+
+    if (attempt < MAX_ROLE_EXTRACTION_ATTEMPTS) {
+      console.log(
+        `Role extraction returned incomplete data. Retrying (${attempt + 1}/${MAX_ROLE_EXTRACTION_ATTEMPTS})...`
+      );
+    }
+  }
+
+  throw new Error(
+    `Role extraction returned incomplete data after ${MAX_ROLE_EXTRACTION_ATTEMPTS} attempts.`
+  );
 }
 
 export async function generateKitDraft(
@@ -41,7 +89,9 @@ export async function generateKitDraft(
   }
 
   // Step 1: Extract role information from the job description.
-  const role = await extractRole(jobDescription);
+  // The LLM can return valid JSON that is still structurally incomplete,
+  // so retry once before treating role extraction as a failure.
+  const role = await extractRoleWithRetry(jobDescription);
 
   // Step 2: Extract explicit requirements from the job description.
   const requirements = await extractRequirements(jobDescription);

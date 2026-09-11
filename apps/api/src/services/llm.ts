@@ -1,13 +1,17 @@
 import { GoogleGenAI } from "@google/genai";
 
-const MAX_ATTEMPTS_PER_MODEL = 3;
+const MAX_TRANSIENT_ATTEMPTS = 3;
+const RETRY_DELAYS_MS = [1000, 2000];
+
+let nextModelIndex = 0;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function getModels(): string[] {
-  const primaryModel = process.env.GEMINI_MODEL ?? "gemini-3.7-flash";
+  const primaryModel =
+    process.env.GEMINI_MODEL ?? "gemini-3.8-flash";
 
   const fallbackModels = (process.env.GEMINI_FALLBACK_MODELS ?? "")
     .split(",")
@@ -17,9 +21,14 @@ function getModels(): string[] {
   return [...new Set([primaryModel, ...fallbackModels])];
 }
 
-function isRetryableError(error: unknown): boolean {
+function getErrorDetails(error: unknown): {
+  status?: number;
+  message: string;
+} {
   if (!error || typeof error !== "object") {
-    return false;
+    return {
+      message: String(error ?? "Unknown error"),
+    };
   }
 
   const possibleError = error as {
@@ -27,23 +36,64 @@ function isRetryableError(error: unknown): boolean {
     message?: string;
   };
 
+  return {
+    status: possibleError.status,
+    message: possibleError.message?.toLowerCase() ?? "",
+  };
+}
+
+function isQuotaError(error: unknown): boolean {
+  const { status, message } = getErrorDetails(error);
+
+  if (status === 429) {
+    return true;
+  }
+
+  return (
+    message.includes("quota") ||
+    message.includes("rate limit") ||
+    message.includes("too many requests") ||
+    message.includes("resource exhausted") ||
+    message.includes("requests per minute") ||
+    message.includes("requests per day")
+  );
+}
+
+function isTransientServerError(error: unknown): boolean {
+  const { status, message } = getErrorDetails(error);
+
   if (
-    possibleError.status === 429 ||
-    possibleError.status === 500 ||
-    possibleError.status === 502 ||
-    possibleError.status === 503 ||
-    possibleError.status === 504
+    status === 500 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504
   ) {
     return true;
   }
 
-  const message = possibleError.message?.toLowerCase() ?? "";
+  return (
+    message.includes("internal server error") ||
+    message.includes("bad gateway") ||
+    message.includes("service unavailable") ||
+    message.includes("temporarily unavailable") ||
+    message.includes("high demand")
+  );
+}
+
+function isRetryableGenerationError(error: unknown): boolean {
+  if (isQuotaError(error)) {
+    return true;
+  }
+
+  if (isTransientServerError(error)) {
+    return true;
+  }
+
+  const { message } = getErrorDetails(error);
 
   return (
-    message.includes("rate limit") ||
-    message.includes("too many requests") ||
-    message.includes("high demand") ||
-    message.includes("temporarily unavailable")
+    message.includes("llm returned an empty response") ||
+    message.includes("llm returned invalid json")
   );
 }
 
@@ -57,12 +107,34 @@ export async function generateJson<T>(prompt: string): Promise<T> {
   const ai = new GoogleGenAI({ apiKey });
   const models = getModels();
 
+  if (models.length === 0) {
+    throw new Error("No LLM models are configured.");
+  }
+
+  /*
+   * Rotate the starting model for every request.
+   *
+   * This prevents every generation step from hammering the same
+   * free-tier model until its quota is exhausted.
+   */
+  const startIndex = nextModelIndex % models.length;
+  nextModelIndex = (nextModelIndex + 1) % models.length;
+
+  const orderedModels = [
+    ...models.slice(startIndex),
+    ...models.slice(0, startIndex),
+  ];
+
   let lastError: unknown;
 
-  for (const model of models) {
+  for (const model of orderedModels) {
     console.log(`Trying LLM model: ${model}`);
 
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_MODEL; attempt++) {
+    for (
+      let attempt = 1;
+      attempt <= MAX_TRANSIENT_ATTEMPTS;
+      attempt++
+    ) {
       try {
         const response = await ai.models.generateContent({
           model,
@@ -86,29 +158,46 @@ export async function generateJson<T>(prompt: string): Promise<T> {
       } catch (error) {
         lastError = error;
 
-        if (!isRetryableError(error)) {
+        const quotaError = isQuotaError(error);
+        const retryableError =
+          isRetryableGenerationError(error);
+
+        if (!retryableError) {
           throw error;
         }
 
-        if (attempt === MAX_ATTEMPTS_PER_MODEL) {
+        /*
+         * Quota errors should immediately move to another model.
+         * Retrying the same exhausted quota is pointless.
+         */
+        if (quotaError) {
           console.log(
-            `LLM model ${model} failed after ${MAX_ATTEMPTS_PER_MODEL} attempts.`
+            `LLM model ${model} hit a quota/rate-limit error. ` +
+            `Moving to the next configured model.`
           );
           break;
         }
 
-        const delayMs = 1000 * 2 ** (attempt - 1);
+        if (attempt === MAX_TRANSIENT_ATTEMPTS) {
+          console.log(
+            `LLM model ${model} failed after ` +
+            `${MAX_TRANSIENT_ATTEMPTS} attempts.`
+          );
+          break;
+        }
+
+        const delayMs =
+          RETRY_DELAYS_MS[attempt - 1] ??
+          RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1];
 
         console.log(
-          `LLM request failed for ${model} on attempt ${attempt}. ` +
-          `Retrying in ${delayMs}ms...`
+          `LLM request failed for ${model} on attempt ` +
+          `${attempt}. Retrying in ${delayMs}ms...`
         );
 
         await sleep(delayMs);
       }
     }
-
-    console.log(`Moving to next LLM model after failure: ${model}`);
   }
 
   throw new Error(

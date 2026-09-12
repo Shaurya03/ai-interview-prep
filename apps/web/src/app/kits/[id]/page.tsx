@@ -3,7 +3,8 @@
 import { useEffect, useState, type DragEvent, type KeyboardEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 
-const API_URL = "http://localhost:4000";
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 type Requirement = {
   id: string;

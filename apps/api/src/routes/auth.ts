@@ -17,10 +17,12 @@ function setSession(response: Response, userId: string) {
   if (!secret) throw new Error("SESSION_SECRET is required.");
 
   const token = jwt.sign({}, secret, { subject: userId, expiresIn: "7d" });
+  const isProduction = process.env.NODE_ENV === "production";
+
   response.cookie("session", token, {
     httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    sameSite: isProduction ? "none" : "lax",
+    secure: isProduction,
     maxAge: sessionLifetimeMs,
     path: "/",
   });
@@ -68,7 +70,14 @@ authRouter.post("/login", async (request, response, next) => {
 });
 
 authRouter.post("/logout", (_request, response) => {
-  response.clearCookie("session", { httpOnly: true, sameSite: "lax", path: "/" });
+  const isProduction = process.env.NODE_ENV === "production";
+
+  response.clearCookie("session", {
+    httpOnly: true,
+    sameSite: isProduction ? "none" : "lax",
+    secure: isProduction,
+    path: "/",
+  });
   return response.status(204).send();
 });
 

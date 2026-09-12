@@ -1852,7 +1852,7 @@ export default function KitDetailPage() {
                     {!isPracticeMode && (
                       <button
                         type="button"
-                        onClick={() => startPracticeMode}
+                        onClick={() => startPracticeMode()}
                         disabled={data.flashcards.length === 0 || isLoadingPractice}
                         className="shrink-0 rounded-xl bg-zinc-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
                       >

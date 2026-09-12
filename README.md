@@ -874,12 +874,8 @@ The production session cookie uses secure settings, and CORS is restricted to th
 
 ### Deployment URLs
 
-Fill these values after the final deployment:
-
-```text
-Frontend: <FRONTEND_DEPLOYMENT_URL>
-Backend:  <BACKEND_DEPLOYMENT_URL>
-```
+Frontend: https://ai-interview-prep-web-iota.vercel.app/
+Backend:  https://ai-interview-prep-api-mbzx.onrender.com
 
 ---
 

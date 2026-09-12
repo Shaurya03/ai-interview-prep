@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type SubmitEvent } from "react";
 import { useRouter } from "next/navigation";
 
@@ -7,7 +8,6 @@ const API_URL = "http://localhost:4000";
 
 export default function LoginPage() {
   const router = useRouter();
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -15,21 +15,15 @@ export default function LoginPage() {
 
   async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
-
     setError("");
     setIsLoading(true);
 
     try {
       const response = await fetch(`${API_URL}/auth/login`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          email,
-          password,
-        }),
+        body: JSON.stringify({ email, password }),
       });
 
       const result = await response.json();
@@ -52,14 +46,8 @@ export default function LoginPage() {
       <div className="mx-auto flex min-h-[80vh] max-w-md items-center">
         <div className="w-full rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
           <div className="mb-8">
-            <p className="mb-2 text-sm font-medium text-zinc-500">
-              AI Interview Prep
-            </p>
-
-            <h1 className="text-3xl font-semibold tracking-tight">
-              Welcome back
-            </h1>
-
+            <p className="mb-2 text-sm font-medium text-zinc-500">AI Interview Prep</p>
+            <h1 className="text-3xl font-semibold tracking-tight">Welcome back</h1>
             <p className="mt-2 text-sm text-zinc-600">
               Log in to manage your interview preparation kits.
             </p>
@@ -67,13 +55,7 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label
-                htmlFor="email"
-                className="mb-2 block text-sm font-medium"
-              >
-                Email
-              </label>
-
+              <label htmlFor="email" className="mb-2 block text-sm font-medium">Email</label>
               <input
                 id="email"
                 type="email"
@@ -87,13 +69,7 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label
-                htmlFor="password"
-                className="mb-2 block text-sm font-medium"
-              >
-                Password
-              </label>
-
+              <label htmlFor="password" className="mb-2 block text-sm font-medium">Password</label>
               <input
                 id="password"
                 type="password"
@@ -120,6 +96,13 @@ export default function LoginPage() {
               {isLoading ? "Logging in..." : "Log in"}
             </button>
           </form>
+
+          <p className="mt-6 text-center text-sm text-zinc-600">
+            Don&apos;t have an account?{" "}
+            <Link href="/register" className="font-medium text-zinc-950 underline underline-offset-4">
+              Register
+            </Link>
+          </p>
         </div>
       </div>
     </main>

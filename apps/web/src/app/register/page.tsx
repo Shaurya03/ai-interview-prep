@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type SubmitEvent } from "react";
 import { useRouter } from "next/navigation";
 
@@ -7,7 +8,6 @@ const API_URL = "http://localhost:4000";
 
 export default function RegisterPage() {
   const router = useRouter();
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -16,7 +16,6 @@ export default function RegisterPage() {
 
   async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
-
     setError("");
 
     if (password !== confirmPassword) {
@@ -29,14 +28,9 @@ export default function RegisterPage() {
     try {
       const response = await fetch(`${API_URL}/auth/register`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          email,
-          password,
-        }),
+        body: JSON.stringify({ email, password }),
       });
 
       const result = await response.json();
@@ -59,29 +53,16 @@ export default function RegisterPage() {
       <div className="mx-auto flex min-h-[80vh] max-w-md items-center">
         <div className="w-full rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
           <div className="mb-8">
-            <p className="mb-2 text-sm font-medium text-zinc-500">
-              AI Interview Prep
-            </p>
-
-            <h1 className="text-3xl font-semibold tracking-tight">
-              Create your account
-            </h1>
-
+            <p className="mb-2 text-sm font-medium text-zinc-500">AI Interview Prep</p>
+            <h1 className="text-3xl font-semibold tracking-tight">Create your account</h1>
             <p className="mt-2 text-sm text-zinc-600">
-              Create an account to start building your interview preparation
-              kits.
+              Create an account to start building your interview preparation kits.
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label
-                htmlFor="email"
-                className="mb-2 block text-sm font-medium"
-              >
-                Email
-              </label>
-
+              <label htmlFor="email" className="mb-2 block text-sm font-medium">Email</label>
               <input
                 id="email"
                 type="email"
@@ -95,13 +76,7 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label
-                htmlFor="password"
-                className="mb-2 block text-sm font-medium"
-              >
-                Password
-              </label>
-
+              <label htmlFor="password" className="mb-2 block text-sm font-medium">Password</label>
               <input
                 id="password"
                 type="password"
@@ -115,13 +90,7 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label
-                htmlFor="confirmPassword"
-                className="mb-2 block text-sm font-medium"
-              >
-                Confirm password
-              </label>
-
+              <label htmlFor="confirmPassword" className="mb-2 block text-sm font-medium">Confirm password</label>
               <input
                 id="confirmPassword"
                 type="password"
@@ -151,12 +120,9 @@ export default function RegisterPage() {
 
           <p className="mt-6 text-center text-sm text-zinc-600">
             Already have an account?{" "}
-            <a
-              href="/login"
-              className="font-medium text-zinc-950 underline underline-offset-4"
-            >
+            <Link href="/login" className="font-medium text-zinc-950 underline underline-offset-4">
               Log in
-            </a>
+            </Link>
           </p>
         </div>
       </div>

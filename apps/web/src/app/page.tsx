@@ -36,7 +36,7 @@ export default function DashboardPage() {
         });
 
         if (!authResponse.ok) {
-          router.push("/login");
+          router.push("/register");
           return;
         }
 

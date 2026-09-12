@@ -15,6 +15,12 @@ const createKitSchema = z.object({
   daysAvailable: z.number().int().min(1).max(60),
 });
 
+const practiceResponseSchema = z.object({
+  flashcardId: z.string().trim().min(1),
+  answer: z.string().trim().min(1).max(10000),
+  confidence: z.enum(["low", "medium", "high"]),
+});
+
 const updateBuilderSchema = z.union([
   // Question category update MUST come before
   // the generic question update.
@@ -766,6 +772,164 @@ kitsRouter.patch(
       });
     }
   }
+);
+
+
+/*
+ * Practice Mode
+ *
+ * Practice responses are persisted inside builderState so a user can leave
+ * and reopen a kit without losing their confidence history. This also keeps
+ * practice state separate from the generated Appendix A kit data.
+ */
+kitsRouter.get(
+  "/:id/practice",
+  async (request: AuthenticatedRequest, response, next) => {
+    try {
+      const kit = await Kit.findOne({
+        _id: request.params.id,
+        ownerId: request.userId,
+      }).select("_id status data builderState");
+
+      if (!kit) {
+        return response.status(404).json({
+          error: {
+            code: "KIT_NOT_FOUND",
+            message: "Interview kit not found.",
+          },
+        });
+      }
+
+      if (kit.status !== "ready" || !kit.data) {
+        return response.status(409).json({
+          error: {
+            code: "KIT_NOT_READY",
+            message: "Practice mode is only available for a generated kit.",
+          },
+        });
+      }
+
+      const builderState = (kit.builderState ?? {}) as {
+        practiceResponses?: Record<
+          string,
+          {
+            answer: string;
+            confidence: "low" | "medium" | "high";
+            updatedAt: string;
+          }
+        >;
+      };
+
+      return response.json({
+        responses: builderState.practiceResponses ?? {},
+      });
+    } catch (error) {
+      return next(error);
+    }
+  },
+);
+
+kitsRouter.put(
+  "/:id/practice/:flashcardId",
+  async (request: AuthenticatedRequest, response, next) => {
+    try {
+      const parsed = practiceResponseSchema.safeParse({
+        ...(request.body ?? {}),
+        flashcardId: request.params.flashcardId,
+      });
+
+      if (!parsed.success) {
+        return response.status(400).json({
+          error: {
+            code: "INVALID_PRACTICE_RESPONSE",
+            message: "Invalid practice response.",
+            details: parsed.error.flatten(),
+          },
+        });
+      }
+
+      const kit = await Kit.findOne({
+        _id: request.params.id,
+        ownerId: request.userId,
+      });
+
+      if (!kit) {
+        return response.status(404).json({
+          error: {
+            code: "KIT_NOT_FOUND",
+            message: "Interview kit not found.",
+          },
+        });
+      }
+
+      if (kit.status !== "ready" || !kit.data) {
+        return response.status(409).json({
+          error: {
+            code: "KIT_NOT_READY",
+            message: "Practice mode is only available for a generated kit.",
+          },
+        });
+      }
+
+      const data = kit.data as {
+        flashcards?: Array<{
+          id: string;
+          front: string;
+          back: string;
+          requirement_ids: string[];
+        }>;
+      };
+
+      const flashcard = data.flashcards?.find(
+        (item) => item.id === parsed.data.flashcardId,
+      );
+
+      if (!flashcard) {
+        return response.status(404).json({
+          error: {
+            code: "FLASHCARD_NOT_FOUND",
+            message: "Flashcard not found.",
+          },
+        });
+      }
+
+      const builderState = (kit.builderState ?? {}) as {
+        practiceResponses?: Record<
+          string,
+          {
+            answer: string;
+            confidence: "low" | "medium" | "high";
+            updatedAt: string;
+          }
+        >;
+      };
+
+      if (!builderState.practiceResponses) {
+        builderState.practiceResponses = {};
+      }
+
+      const savedResponse = {
+        answer: parsed.data.answer,
+        confidence: parsed.data.confidence,
+        updatedAt: new Date().toISOString(),
+      };
+
+      builderState.practiceResponses[parsed.data.flashcardId] = savedResponse;
+
+      kit.builderState = builderState;
+      kit.markModified("builderState");
+      await kit.save();
+
+      return response.json({
+        response: {
+          flashcardId: parsed.data.flashcardId,
+          ...savedResponse,
+        },
+      });
+    } catch (error) {
+      return next(error);
+    }
+  },
 );
 
 kitsRouter.post(
